@@ -54,7 +54,7 @@ logic tree expansion requires a lot of disk space, in the order of several
 terabytes. Also this can be limited by choosing modest discretization settings
 and/or calculating a limited subset of, for example, site response zones. The
 final hazard and risk integrators at this moment only provide mean hazard and
-mean risk and therefore do not rely on the full logic tree exansion of the
+mean risk and therefore do not rely on the full logic tree expansion of the
 preparatory calculations.<br>
 
 Run the preparatory calculations: <br>
