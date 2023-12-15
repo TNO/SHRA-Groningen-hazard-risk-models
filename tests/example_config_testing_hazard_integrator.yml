@@ -1,0 +1,66 @@
+#file: noinspection SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection
+# SECTION 1: GENERIC SETTINGS
+ 
+# SECTION 1.1: PATHS to FILES
+base_path: &base_path ./tests/res/data_for_hazard_integrator/
+
+file_paths:
+  # internal files: data sources / sinks
+  hazard_prep_file: &hazard_prep_file [*base_path, hazard_prep_input_gmmv7.h5]
+  risk_prep_file:  &risk_prep_file [*base_path, risk_prep_input_gmmv7.h5]
+  exposure_grid_for_source_integration: &exposure_grid_file [*base_path, exposure_prep_input.h5]
+  source_distribution_file: &source_distribution_file [ *base_path, source_distribution_input.h5 ]
+  hazard_risk_file: &hazard_risk_file [*base_path, hazard_risk.h5]
+
+# SECTION 1.2: MODEL VERSIONS
+model_versions:
+  gmm_version: &gmm_version GMM-V7
+  fcm_version: &fcm_version FCM-V7
+ 
+# SECTION 1.3: DATA SOURCES
+data_stores:
+  hazard_prep: &hazard_prep
+    type: xarray_dataset
+    path: *hazard_prep_file
+
+  risk_prep: &risk_prep
+    type: xarray_dataset
+    path: *risk_prep_file
+ 
+  exposure_grid: &exposure_grid
+    type: xarray_dataset
+    path: *exposure_grid_file
+    group: exposure_grid
+
+  source_distribution: &source_distribution
+    type: xarray_dataset
+    path: *source_distribution_file
+
+  hazard: &hazard
+    type: xarray_dataset
+    path: *hazard_risk_file
+    group: [ hazard, *gmm_version ]
+
+  risk: &risk
+    type: xarray_dataset
+    path: *hazard_risk_file
+    group: [ risk, *gmm_version, *fcm_version ]
+
+# modules:
+modules:
+  hazard_integrator:
+    data_sources:
+      source_distribution: *source_distribution
+      hazard_prep: *hazard_prep
+      exposure_grid: *exposure_grid
+    data_sinks:
+      hazard: *hazard
+    return_periods: [ 475., 2475. ]
+
+  risk_integrator:
+    data_sources:
+      source_distribution: *source_distribution
+      risk_prep: *risk_prep
+      exposure_grid: *exposure_grid
+    data_sinks:
+      risk: *risk

@@ -1,0 +1,23 @@
+name: hazard_risk_models
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - numpy
+  - yaml
+  - conda
+  - xarray
+  - scipy
+  - configargparse
+  - dask
+  - xarray-datatree
+  - h5netcdf
+  - zarr
+  - xarray-einstats==0.6.0
+  - pytest
+  - pytest-cov
+  - python=3.11
+  - numba
+  - geopandas
+  - rioxarray
+  - flox

@@ -1,0 +1,3 @@
+[submodule "chaintools"]
+	path = chaintools
+	url = https://github.com/TNO/SHRA-Groningen-chaintools.git

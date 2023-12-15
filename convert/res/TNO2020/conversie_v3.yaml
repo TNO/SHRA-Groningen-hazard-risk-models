@@ -1,0 +1,37 @@
+#file: noinspection SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection
+# SOURCE: TNO, 2021
+PC2:      {namklasse: "PC2",      modelonzekerheid: 0.47, base: 'v6',conseq_up2mid: 'no',  frag_up2mid: 'no',  frag_med_shift: 'no'}
+PC3H:     {namklasse: "PC3H",     modelonzekerheid: 0.47, base: 'v6',conseq_up2mid: 'no',  frag_up2mid: 'no',  frag_med_shift: 'no'}
+PC3L:     {namklasse: "PC3L",     modelonzekerheid: 0.47, base: 'v6',conseq_up2mid: 'no',  frag_up2mid: 'no',  frag_med_shift: 'no'}
+PC3M:     {namklasse: "PC3M",     modelonzekerheid: 0.47, base: 'v6',conseq_up2mid: 'no',  frag_up2mid: 'no',  frag_med_shift: 'no'}
+RC1H:     {namklasse: "RC1H",     modelonzekerheid: 0.47, base: 'v6',conseq_up2mid: 'no',  frag_up2mid: 'no',  frag_med_shift: 'no'}
+RC1L:     {namklasse: "RC1L",     modelonzekerheid: 0.47, base: 'v6',conseq_up2mid: 'no',  frag_up2mid: 'no',  frag_med_shift: 'no'}
+RC1M:     {namklasse: "RC1M",     modelonzekerheid: 0.47, base: 'v6',conseq_up2mid: 'no',  frag_up2mid: 'no',  frag_med_shift: 'no'}
+RC2:      {namklasse: "RC2",      modelonzekerheid: 0.47, base: 'v6',conseq_up2mid: 'no',  frag_up2mid: 'no',  frag_med_shift: 'no'}
+RC3H:     {namklasse: "RC3H",     modelonzekerheid: 0.47, base: 'v6',conseq_up2mid: 'no',  frag_up2mid: 'no',  frag_med_shift: 'no'}
+RC3L:     {namklasse: "RC3L",     modelonzekerheid: 0.47, base: 'v6',conseq_up2mid: 'no',  frag_up2mid: 'no',  frag_med_shift: 'no'}
+RC3M:     {namklasse: "RC3M",     modelonzekerheid: 0.47, base: 'v6',conseq_up2mid: 'no',  frag_up2mid: 'no',  frag_med_shift: 'no'}
+S1H:      {namklasse: "S1H",      modelonzekerheid: 0.47, base: 'v6',conseq_up2mid: 'no',  frag_up2mid: 'no',  frag_med_shift: 'no'}
+S1L:      {namklasse: "S1L",      modelonzekerheid: 0.47, base: 'v6',conseq_up2mid: 'no',  frag_up2mid: 'no',  frag_med_shift: 'no'}
+S1M:      {namklasse: "S1M",      modelonzekerheid: 0.47, base: 'v6',conseq_up2mid: 'no',  frag_up2mid: 'no',  frag_med_shift: 'no'}
+S2H:      {namklasse: "S2H",      modelonzekerheid: 0.47, base: 'v6',conseq_up2mid: 'no',  frag_up2mid: 'no',  frag_med_shift: 'no'}
+S2L:      {namklasse: "S2L",      modelonzekerheid: 0.47, base: 'v6',conseq_up2mid: 'no',  frag_up2mid: 'no',  frag_med_shift: 'no'}
+S2M:      {namklasse: "S2M",      modelonzekerheid: 0.47, base: 'v6',conseq_up2mid: 'no',  frag_up2mid: 'no',  frag_med_shift: 'no'}
+S3:       {namklasse: "S3",       modelonzekerheid: 0.47, base: 'v6',conseq_up2mid: 'no',  frag_up2mid: 'no',  frag_med_shift: 'no'}
+URM1F_B:  {namklasse: "URM1F_B",  modelonzekerheid: 0.35, base: 'v7',conseq_up2mid: 'yes', frag_up2mid: 'yes', frag_med_shift: 'no'}
+URM1F_HA: {namklasse: "URM1F_HA", modelonzekerheid: 0.35, base: 'v7',conseq_up2mid: 'yes', frag_up2mid: 'yes', frag_med_shift: 'no'}
+URM1F_HC: {namklasse: "URM1F_HC", modelonzekerheid: 0.35, base: 'v7',conseq_up2mid: 'yes', frag_up2mid: 'yes', frag_med_shift: 'no'}
+URM2L:    {namklasse: "URM2L",    modelonzekerheid: 0.35, base: 'v7',conseq_up2mid: 'no',  frag_up2mid: 'no',  frag_med_shift: 'no'}
+URM3L:    {namklasse: "URM3L",    modelonzekerheid: 0.35, base: 'v7',conseq_up2mid: 'yes', frag_up2mid: 'yes', frag_med_shift: 'no'}
+URM3M_B:  {namklasse: "URM3M_B",  modelonzekerheid: 0.35, base: 'v7',conseq_up2mid: 'yes', frag_up2mid: 'yes', frag_med_shift: 'no'}
+URM3M_D:  {namklasse: "URM3M_D",  modelonzekerheid: 0.35, base: 'v7',conseq_up2mid: 'no',  frag_up2mid: 'no',  frag_med_shift: 'no'}
+URM3M_U:  {namklasse: "URM3M_U",  modelonzekerheid: 0.35, base: 'v7',conseq_up2mid: 'yes', frag_up2mid: 'yes', frag_med_shift: 'no'}
+URM4L:    {namklasse: "URM4L",    modelonzekerheid: 0.35, base: 'v6',conseq_up2mid: 'no',  frag_up2mid: 'no',  frag_med_shift: 'no'}
+URM5L:    {namklasse: "URM5L",    modelonzekerheid: 0.35, base: 'v7',conseq_up2mid: 'no',  frag_up2mid: 'no',  frag_med_shift: 'yes'}
+URM6L:    {namklasse: "URM6L",    modelonzekerheid: 0.35, base: 'v7',conseq_up2mid: 'no',  frag_up2mid: 'no',  frag_med_shift: 'yes'}
+URM7L:    {namklasse: "URM7L",    modelonzekerheid: 0.35, base: 'v7',conseq_up2mid: 'no',  frag_up2mid: 'no',  frag_med_shift: 'yes'}
+URM8L:    {namklasse: "URM8L",    modelonzekerheid: 0.35, base: 'v7',conseq_up2mid: 'no',  frag_up2mid: 'no',  frag_med_shift: 'yes'}
+URM9L:    {namklasse: "URM9L",    modelonzekerheid: 0.35, base: 'v7',conseq_up2mid: 'no',  frag_up2mid: 'no',  frag_med_shift: 'no'}
+URM10:    {namklasse: "URM10",    modelonzekerheid: 0.35, base: 'v7',conseq_up2mid: 'no',  frag_up2mid: 'no',  frag_med_shift: 'no'}
+W2:       {namklasse: "W2",       modelonzekerheid: 0.47, base: 'v6',conseq_up2mid: 'no',  frag_up2mid: 'no',  frag_med_shift: 'no'}
+W3:       {namklasse: "W3",       modelonzekerheid: 0.47, base: 'v6',conseq_up2mid: 'no',  frag_up2mid: 'no',  frag_med_shift: 'no'}

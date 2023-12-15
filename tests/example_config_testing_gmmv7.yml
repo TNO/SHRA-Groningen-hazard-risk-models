@@ -1,0 +1,313 @@
+#file: noinspection SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection,SpellCheckingInspection
+# SECTION 1: GENERIC SETTINGS
+ 
+# SECTION 1.1: PATHS to FILES
+base_path: &base_path ./tests/res/
+
+file_paths:
+  # external input files and directories
+  zonation_file: &zonation_file [ *base_path, Geological_zones_V6.zip ]
+  edb_file: &edb_file [ *base_path, example_EDB.csv ]
+
+  # internal files: data sources / sinks
+  rupture_prep_file: &rupture_prep_file [*base_path, rupture_prep_testing.zarr]
+  gmm_config_file: &gmm_config_file [*base_path, GMM_config_testing.h5]
+  gmm_tables_file: &gmm_tables_file [*base_path, GMM_tables_testing_gmmv7.h5]
+  fcm_config_file: &fcm_config_file [*base_path, FCM_config_testing.h5]
+  fcm_tables_file: &fcm_tables_file [*base_path, FCM_tables_testing.h5]
+  hazard_prep_file: &hazard_prep_file [*base_path, hazard_prep_testing_gmmv7.h5]
+  im_prep_file: &im_prep_file [*base_path, im_prep_testing_gmmv7.h5]
+  risk_prep_file:  &risk_prep_file [*base_path, risk_prep_testing_gmmv7.h5]
+  exposure_prep_file: &exposure_prep_file [*base_path, exposure_prep_testing.h5]
+  exposure_grid_for_source_integration: &exposure_grid_file [*base_path, exposure_prep_testing_input.h5]
+  fragility_prep_file: &fragility_prep_file [*base_path, fragility_prep_testing.h5]
+  source_distribution_file: &source_distribution_file [ *base_path, source_distribution_testing.h5 ]
+  hazard_risk_file: &hazard_risk_file [*base_path, hazard_risk.zarr]
+  forecast_file: &forecast_file [ *base_path, ssm_forecast_testing.h5 ]
+
+# SECTION 1.2: MODEL VERSIONS
+model_versions:
+  gmm_version: &gmm_version GMM-V7
+  fcm_version: &fcm_version FCM-V7
+ 
+# SECTION 1.3: DATA SOURCES
+# We recognize the following data types:
+# - xarray_dataarray: a single xarray dataarray
+# - xarray_dataset: a single xarray dataset consisting of multiple dataarrays
+# - xarray_datatree: a tree of xarray datasets
+# - inline: a dictionary of data - useful for simple inputs
+#
+# The data types are independent of the file format / structure.
+# The file format is currently determined by the file extension, e.g.,
+# - .h5: HDF5 file
+# - .zarr: Zarr data store (actually a directory)
+#
+# Note that both HDF5 and Zarr support multiple datasets in a single file,
+# which can be opened/read as a datatree, or, by specifying a "group" name,
+# as a single dataset. The group specification can also be used to select
+# a specific dataaarray within a dataset.
+ 
+data_stores:
+  forecast: &forecast
+    type: xarray_dataarray
+    path: *forecast_file
+    group: forecast
+
+  rupture_prep: &rupture_prep
+    type: xarray_dataset
+    path: *rupture_prep_file
+
+  gmm_config: &gmm_config
+    type: xarray_dataset
+    path: *gmm_config_file
+    group: *gmm_version
+ 
+  gmm_config_tree:
+    type: xarray_datatree
+    path: *gmm_config_file
+ 
+  fcm_config: &fcm_config
+    type: xarray_dataset
+    path: *fcm_config_file
+    group: *fcm_version
+ 
+  fcm_config_tree:
+    type: xarray_datatree
+    path: *fcm_config_file
+ 
+  gmm_tables: &gmm_tables
+    type: xarray_dataset
+    path: *gmm_tables_file
+    group: *gmm_version
+
+  fcm_tables: &fcm_tables
+    type: xarray_dataset
+    path: *fcm_tables_file
+    group: *fcm_version
+
+  hazard_prep: &hazard_prep
+    type: xarray_dataset
+    path: *hazard_prep_file
+ 
+  im_prep: &im_prep
+    type: xarray_dataset
+    path: *im_prep_file
+ 
+  risk_prep: &risk_prep
+    type: xarray_dataset
+    path: *risk_prep_file
+ 
+  fragility_prep: &fragility_prep
+    type: xarray_dataset
+    path: *fragility_prep_file
+
+  exposure_grid: &exposure_grid_2
+    type: xarray_dataset
+    path: *exposure_grid_file
+    group: exposure_grid
+
+  exposure_grid: &exposure_grid
+    type: xarray_dataset
+    path: *exposure_prep_file
+    group: exposure_grid
+
+  exposure_database: &exposure_database
+    type: xarray_dataset
+    path: *exposure_prep_file
+    group: exposure_database
+
+  source_distribution: &source_distribution
+    type: xarray_dataset
+    path: *source_distribution_file
+
+  hazard: &hazard
+    type: xarray_dataset
+    path: *hazard_risk_file
+    group: [ hazard, *gmm_version ]
+
+  risk: &risk
+    type: xarray_dataset
+    path: *hazard_risk_file
+    group: [ risk, *gmm_version, *fcm_version ]
+
+# sampling settings for various dimensions
+# this may include coordinate settings
+dimensions: &dimensions
+  magnitude: &magnitude
+    length: 10
+    interval: [1.4, 7.1]
+  distance_rupture: &distance_rupture
+    length: 10
+    sequence_spacing: log
+    interval: [3.0, 70.0]
+    units: km
+  distance_hypocenter: &distance_hypocenter
+    length: 10
+    sequence_spacing: log
+    interval: [ 3.0, 70.0 ]
+    units: km
+  gm_reference: &gm_reference
+    length: 10
+  gm_surface: &gm_surface
+    length: 10
+ 
+# supplementary coordinates if more than one is needed for a dimension
+coordinates: &coordinates
+  SA_g_reference: &SA_g_reference
+    dim: gm_reference
+    sequence_spacing: log
+    interval: [1.0e-5, 10.0]
+    units: g
+  SA_reference: &SA_reference
+    <<: *SA_g_reference
+    multiplier: 981.0 # unit conversion from g to cm/s2
+    units: "cm/s2"
+  SA_g_surface: &SA_g_surface
+    <<: *SA_g_reference
+    dim: gm_surface
+    interval: [1.0e-3, 2.0] # a bit more resolution for surface
+  SA_surface: &SA_surface
+    <<: *SA_g_surface
+    multiplier: 981.0 # unit conversion from g to cm/s2
+    units: "cm/s2"
+ 
+# SECTION 2: MODULE SPECIFIC SETTINGS
+modules:
+  parse_input:
+    gmm_config: *gmm_config
+    fcm_config: *fcm_config
+
+  rupture_prep:
+    data_sinks:
+      rupture_prep: *rupture_prep
+    dimensions:
+      magnitude: *magnitude
+      distance_hypocenter: *distance_hypocenter
+      distance_rupture: *distance_rupture
+      azimuth:
+        length: 21
+        units: degrees
+    n_workers: 1
+    n_sample: 100
+    rng_seed: 42
+    batch_dimensions: [ magnitude, distance_hypocenter, azimuth ]
+    rupture_depth: 3.
+    rupture_length_sd: 0.190
+    azimuth_sd: 30.
+
+  source_integrator:
+    data_sources:
+      rupture_prep: *rupture_prep
+      forecast: *forecast
+      exposure_grid: *exposure_grid_2
+    data_sinks:
+      source_distribution: *source_distribution
+    rupture_azimuth: -30.
+    n_workers: 1
+    chunks:
+      loc_s: -1
+      x_y: -1
+      magnitude: -1
+      distance_hypocenter: -1
+      distance_rupture: -1
+      azimuth: -1
+
+  gmm_tables:
+    data_sources:
+      gmm_config: *gmm_config
+    data_sinks:
+      gmm_tables: *gmm_tables
+    dimensions:
+      magnitude: *magnitude
+      distance_rupture: *distance_rupture
+      gm_reference: *gm_reference
+      gm_surface: *gm_surface
+    coordinates: *coordinates
+    n_workers: 1
+    chunks:
+      zone: 1
+      magnitude: 10
+      distance_rupture: 10
+ 
+  fcm_tables:
+    data_sources:
+      fcm_config: *fcm_config
+    data_sinks:
+      fcm_tables: *fcm_tables
+    dimensions:
+      gm_surface: *gm_surface
+    coordinates:
+      SA_surface: *SA_surface
+      SA_g_surface: *SA_g_surface
+    n_workers: 1
+ 
+  hazard_prep:
+    data_sources:
+      gmm_tables: *gmm_tables
+    data_sinks:
+      hazard_prep: *hazard_prep
+    n_workers: 1
+    chunks:
+      zone: 1
+ 
+  im_prep:
+    data_sources:
+      fcm_config: *fcm_config
+      gmm_config: *gmm_config
+      gmm_tables: *gmm_tables
+    data_sinks:
+      im_prep: *im_prep
+    n_workers: 1
+    n_sample: 5_0
+    n_batch: 1
+    rng_seed: 42
+    chunks:
+      zone: 1
+      surface_condition: 1
+      branch_median: 1
+      branch_tau: 1
+      branch_phiss: 1
+      magnitude: 10
+      distance_rupture: 10
+    s2s_mode: default # default: determined by GMM version; alternatives: epistemic (gmmV7), aleatory (gmmv5/v6)
+    s2s_p2p_mode: full # default: s2s_p2p_mode: zero (NAM/SodM), consistent (TNO), full (implicit in V7)
+
+
+  risk_prep:
+    data_sources:
+      im_prep: *im_prep
+      fcm_tables: *fcm_tables
+    data_sinks:
+      risk_prep: *risk_prep
+    n_workers: 1
+    chunks:
+      IM_FCM: 1
+      zone: 1
+      magnitude: 10
+      distance_rupture: 10
+
+  exposure_prep:
+    data_sinks:
+      exposure_grid: *exposure_grid
+      exposure_database: *exposure_database
+    edb_file: *edb_file
+    zonation_file: *zonation_file
+    grid_crs: EPSG:28992
+    grid_spacing: 1000.
+
+  hazard_integrator:
+    data_sources:
+      source_distribution: *source_distribution
+      hazard_prep: *hazard_prep
+      exposure_grid: *exposure_grid_2
+    data_sinks:
+      hazard: *hazard
+    return_periods: [ 475., 2475. ]
+
+  risk_integrator:
+    data_sources:
+      source_distribution: *source_distribution
+      risk_prep: *risk_prep
+      exposure_grid: *exposure_grid_2
+    data_sinks:
+      risk: *risk

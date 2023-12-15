@@ -1,0 +1,9 @@
+{
+    "_ARRAY_DIMENSIONS": [
+        "distance_hypocenter",
+        "magnitude",
+        "distance_rupture",
+        "azimuth"
+    ],
+    "coordinates": "distance_epicenter rupture_depth"
+}

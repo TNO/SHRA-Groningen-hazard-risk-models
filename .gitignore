@@ -1,0 +1,16 @@
+*.pyc
+__pycache__/
+.vscode/
+.idea/
+*.h5
+*.png
+README.html
+README_files/
+.env
+cache/
+cache
+demo/demo_files/
+demo/demo.tex
+demo/demo.html
+demo/demo.log
+demo/demo.pdf
