@@ -2,6 +2,9 @@
 
 # SECTION 1.1: PATHS to FILES and DIRECTORIES
 paths:
+  # composite paths can be constructed by putting
+  # the components in square brackets
+  
   # base paths
   base_path: &base_path /data/os_psdra/run_demo/
 
@@ -42,6 +45,8 @@ model_versions:
 # - .zarr: Zarr data store (actually a directory)
 # We advise to use .zarr exclusively for the data stores, as some of the
 # modules depend on its append functionality.
+# Within a file also a 'group' can be defined to create a data hierarchy.
+# Like file paths, group paths can be composed using square brackets
 
 data_stores:
   config_tree: &config_tree
