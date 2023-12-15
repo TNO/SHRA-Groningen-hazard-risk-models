@@ -284,4 +284,3 @@ dependencies:
   - zlib=1.2.13=hd590300_5
   - zstandard=0.22.0=py311haa97af0_0
   - zstd=1.5.5=hfc55251_0
-prefix: /home/abenfm/anaconda3/envs/hazard_risk_models
