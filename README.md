@@ -25,7 +25,7 @@ The repository contains an `environment.yml` file which can be used to set up a 
 the code as intended. 
 
 To set up the virtual environment, the following command is run (`conda` and `mamba` may be used interchangably): <br>
-`mamba env create --f <path_to_environment.yml>` <br>
+`mamba env create -f <path_to_environment.yml>` <br>
 
 > The provided `environment.yml` files has references to the exact versions of packages used by the developers, 
 which are not available under operating systems other than _Ubuntu 20.04.6 LTS_. In these cases, the less comprehensive 
