@@ -51,7 +51,10 @@ def convert(base_path):
     }
     tau_branches = [tau_branch_name_mapping[k] for k in tau_levels]
 
-    phiss_branch_name_mapping = {"phi_ss_level1": "Lower", "phi_ss_level2": "Upper"}
+    phiss_branch_name_mapping = {
+        "phi_ss_level1": "Lower",
+        "phi_ss_level2": "Upper",
+    }
     phiss_branches = [phiss_branch_name_mapping[k] for k in phiss_levels]
 
     # create parameter dataset and reshape
@@ -66,7 +69,7 @@ def convert(base_path):
             coords={
                 "IM": im_ids_median,
                 "parameter_median": ("p_b", median_parameters),
-                "branch_median": ("p_b", median_branches),
+                "b_median": ("p_b", median_branches),
             },
             attrs={
                 # assemble any data that may be of interest
@@ -76,7 +79,7 @@ def convert(base_path):
         .set_index(
             # reshaping step 1
             # create multi-index on the flattened dimensions
-            {"p_b": ("parameter_median", "branch_median")}
+            {"p_b": ("parameter_median", "b_median")}
         )
         .unstack(
             # reshaping step 2
@@ -87,9 +90,9 @@ def convert(base_path):
 
     dur_p = xr.DataArray(
         dur_df,
-        dims=("branch_median", "parameter_duration"),
+        dims=("b_median", "parameter_duration"),
         coords={
-            "branch_median": dur_branches,
+            "b_median": dur_branches,
             "parameter_duration": dur_df.columns,
             "IM": "D5-75",
         },
@@ -140,15 +143,15 @@ def convert(base_path):
     im_ids_sigma[0] = "PGV"
     tau = xr.DataArray(
         sigma_df.iloc[:, 0:4],
-        dims=("IM", "branch_tau"),
-        coords={"IM": im_ids_sigma, "branch_tau": tau_branches},
+        dims=("IM", "b_tau"),
+        coords={"IM": im_ids_sigma, "b_tau": tau_branches},
         attrs={"source": [os.path.basename(sigma_file)]},
     )
 
     phiss = xr.DataArray(
         sigma_df.iloc[:, 4:],
-        dims=("IM", "branch_phiss"),
-        coords={"IM": im_ids_sigma, "branch_phiss": phiss_branches},
+        dims=("IM", "b_phiss"),
+        coords={"IM": im_ids_sigma, "b_phiss": phiss_branches},
         attrs={"source": [os.path.basename(sigma_file)]},
     )
 
@@ -163,7 +166,10 @@ def convert(base_path):
     wierde_factor = (
         xr.DataArray(
             data=np.array(
-                [[0.2, 0.25, 0.35, 0.35, 0.1, 0.05], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]]
+                [
+                    [0.2, 0.25, 0.35, 0.35, 0.1, 0.05],
+                    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                ]
             ),
             dims=["surface_condition", "T"],
             coords={
@@ -178,7 +184,7 @@ def convert(base_path):
     # s2s branches -- adopted from GMM-V7
     s2s_epsilons = xr.DataArray(
         np.array([-1.645, 0.0, 1.645]),
-        coords={"branch_s2s": ["Lower", "Central", "Upper"]},
+        coords={"b_s2s": ["Lower", "Central", "Upper"]},
     )
 
     vs30_zone_ids = list(map(str, vs30_df.index))
@@ -189,7 +195,7 @@ def convert(base_path):
         attrs={"source": [os.path.basename(vs30_file)]},
     )
 
-    lw_branch_median_tau_weights = xr.DataArray(
+    median_tau_weights = xr.DataArray(
         [
             [0.1, 0.0, 0.0, 0.0],
             [0.0, 0.3, 0.0, 0.0],
@@ -197,17 +203,31 @@ def convert(base_path):
             [0.0, 0.0, 0.0, 0.3],
         ],
         coords={
-            "branch_median": ["Lower", "CentralLower", "CentralUpper", "Upper"],
-            "branch_tau": ["Lower", "CentralLower", "CentralUpper", "Upper"],
+            "b_median": ["Lower", "CentralLower", "CentralUpper", "Upper"],
+            "b_tau": ["Lower", "CentralLower", "CentralUpper", "Upper"],
         },
+        attrs={
+            "support_dims": ["b_median", "b_tau"],
+            "distribution_type": "probability_mass",
+        },        
     )
 
-    lw_branch_phiss_weights = xr.DataArray(
-        [0.5, 0.5], coords={"branch_phiss": ["Lower", "Upper"]}
+    phiss_weights = xr.DataArray(
+        [0.5, 0.5], 
+        coords={"b_phiss": ["Lower", "Upper"]},
+        attrs={
+            "support_dims": "b_phiss",
+            "distribution_type": "probability_mass",
+        }
     )
 
-    lw_branch_s2s_weights = xr.DataArray(
-        [0.2, 0.6, 0.2], coords={"branch_s2s": ["Lower", "Central", "Upper"]}
+    s2s_weights = xr.DataArray(
+        [0.2, 0.6, 0.2], 
+        coords={"b_s2s": ["Lower", "Central", "Upper"]},
+        attrs={
+            "support_dims": "b_s2s",
+            "distribution_type": "probability_mass",
+        }
     )
 
     # combine into single dataset
@@ -224,14 +244,14 @@ def convert(base_path):
                 "wierde_factor": wierde_factor,
                 "s2s_epsilons": s2s_epsilons,
                 "vs30": vs30,
-                "logic_tree:branch_median_tau": lw_branch_median_tau_weights,
-                "logic_tree:branch_phiss": lw_branch_phiss_weights,
-                "logic_tree:branch_s2s": lw_branch_s2s_weights,
+                "w_median_tau": median_tau_weights,
+                "w_phiss": phiss_weights,
+                "w_s2s": s2s_weights,
             },
             coords={"gmm_version": "GMM-V5"},
             attrs={"reference": "Bommer et al. (2017)"},
         )
-        .transpose("zone", "branch_median", "branch_tau", "branch_phiss", "IM", ...)
+        .transpose("zone", "b_median", "b_tau", "b_phiss", "IM", ...)
         .sortby("T")
     )
 

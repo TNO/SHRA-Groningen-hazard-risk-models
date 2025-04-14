@@ -6,11 +6,11 @@ and consequence models of Crowley et al. into a xarray data structures,
 exported in netCDF/HDF5 format. 
 
 """
+
 import numpy as np
 import pandas as pd
 import yaml
 import xarray as xr
-import datatree as dt
 from pathlib import Path
 
 base_path = "./convert/res/"
@@ -109,7 +109,7 @@ def convert(base_path):
     output[label] = dsTNO2020
 
     # combine all
-    datatree = dt.DataTree.from_dict(output)
+    datatree = xr.DataTree.from_dict(output)
     return datatree
 
 
@@ -129,14 +129,15 @@ def convert_to_TNO2020(ds6, ds7, conversion_file):
     ds6, ds7, conv_info = xr.align(ds6, ds7, conv_info, join="right")
 
     fcm_tno = xr.where(conv_info["base"] == "v6", ds6, ds7)
+
     frag_tno = fcm_tno["fragility_parameters"]
     cons_tno = fcm_tno["probability_of_dying"]
 
     # adjust central branch
     frag_tno_midbranch = xr.where(
         conv_info["frag_up2mid"] == "no",
-        frag_tno.sel(branch_fragility="Middle"),
-        frag_tno.sel(branch_fragility="Upper"),
+        frag_tno.sel(b_fragility="Middle"),
+        frag_tno.sel(b_fragility="Upper"),
     )
     b0_mid = frag_tno_midbranch.sel(parameter_fragility="b0")
     b1_mid = frag_tno_midbranch.sel(parameter_fragility="b1")
@@ -146,24 +147,29 @@ def convert_to_TNO2020(ds6, ds7, conversion_file):
 
     # reconstuct fragility branches
     mult = xr.DataArray(
-        [-1.73, 0.0, 1.73], coords={"branch_fragility": ["Lower", "Middle", "Upper"]}
+        [-1.73, 0.0, 1.73], 
+        coords={"b_fragility": ["Lower", "Middle", "Upper"]},
     )
     b0_new = b0_shifted + mult * conv_info["modelonzekerheid"].astype(float)
 
     frag_tno.loc[{"parameter_fragility": "b0"}] = b0_new
     fcm_tno["fragility_parameters"] = frag_tno
 
-    ratio = cons_tno.sel(branch_consequence="Upper") / cons_tno.sel(
-        branch_consequence="Middle"
-    )
-    cons_tno_shifted = cons_tno.shift({"branch_consequence": -1})
-    cons_tno_shifted.loc[{"branch_consequence": "Upper"}] = (
-        ratio * cons_tno_shifted.loc[{"branch_consequence": "Middle"}]
+    ratio = cons_tno.sel(b_consequence="Upper") / cons_tno.sel(b_consequence="Middle")
+    cons_tno_shifted = cons_tno.shift({"b_consequence": -1})
+    cons_tno_shifted.loc[{"b_consequence": "Upper"}] = (
+        ratio * cons_tno_shifted.loc[{"b_consequence": "Middle"}]
     )
     cons_tno_new = xr.where(
         conv_info["conseq_up2mid"] == "no", cons_tno, cons_tno_shifted
     )
     fcm_tno["probability_of_dying"] = cons_tno_new
+
+    # since the xr.where operations above broadcast everything to "vulnerability_class"
+    # we want to remove that that superfluos dimension from the logic tree branch weights
+    for v in fcm_tno:
+        if v.startswith("w_"):
+            fcm_tno[v] = ds7[v]
 
     return fcm_tno
 
@@ -179,24 +185,32 @@ def convert_csv_to_ds(frag_files, cons_files):
     cons_pod_xr = {br: create_cons_pod_xr(br, df) for br, df in cons_df.items()}
     cons_chimney_xr = {br: create_cons_chimney_xr(br, df) for br, df in cons_df.items()}
 
-    pod = xr.concat(cons_pod_xr.values(), "branch_consequence").dropna("limit_state")
+    pod = xr.concat(cons_pod_xr.values(), "b_consequence").dropna("limit_state")
 
     # compile into dataset
     ds = xr.Dataset(
         {
-            "fragility_parameters": xr.concat(frag_xr.values(), "branch_fragility"),
-            "displacement_limit": xr.concat(frag_limit_xr.values(), "branch_fragility"),
+            "fragility_parameters": xr.concat(frag_xr.values(), "b_fragility"),
+            "displacement_limit": xr.concat(frag_limit_xr.values(), "b_fragility"),
             "consequence_parameters": xr.concat(
-                cons_chimney_xr.values(), "branch_consequence"
+                cons_chimney_xr.values(), "b_consequence"
             ),
             "probability_of_dying": pod,
-            "logic_tree:branch_fragility": xr.DataArray(
+            "w_fragility": xr.DataArray(
                 [0.17, 0.66, 0.17],
-                coords={"branch_fragility": ["Lower", "Middle", "Upper"]},
+                coords={"b_fragility": ["Lower", "Middle", "Upper"]},
+                attrs={
+                    "support_dims": "b_fragility",
+                    "distribution_type": "probability_mass",
+                },
             ),
-            "logic_tree:branch_consequence": xr.DataArray(
+            "w_consequence": xr.DataArray(
                 [0.25, 0.5, 0.25],
-                coords={"branch_consequence": ["Lower", "Middle", "Upper"]},
+                coords={"b_consequence": ["Lower", "Middle", "Upper"]},
+                attrs={
+                    "support_dims": "b_consequence",
+                    "distribution_type": "probability_mass",
+                },
             ),
         }
     )
@@ -219,7 +233,7 @@ def create_cons_pod_xr(branch_id, df):
                 "vulnerability_class": df.index.values,
                 "location": ("l_s", locations),
                 "limit_state": ("l_s", states),
-                "branch_consequence": branch_id,
+                "b_consequence": branch_id,
             },
         )
         .set_index(
@@ -242,7 +256,7 @@ def create_cons_chimney_xr(branch_id, df):
         coords={
             "vulnerability_class": df.index.values,
             "parameter_consequence": df.columns[6:],
-            "branch_consequence": branch_id,
+            "b_consequence": branch_id,
         },
     )
 
@@ -255,7 +269,7 @@ def create_frag_limit_xr(branch_id, df):
         coords={
             "vulnerability_class": df.index.values,
             "limit_state": states,
-            "branch_fragility": branch_id,
+            "b_fragility": branch_id,
         },
     )
 
@@ -267,7 +281,7 @@ def create_frag_par_xr(branch_id, df):
         coords={
             "vulnerability_class": df.index.values,
             "parameter_fragility": df.columns[0:7],
-            "branch_fragility": branch_id,
+            "b_fragility": branch_id,
         },
     )
 
@@ -279,7 +293,7 @@ def create_frag_chimney_xr(branch_id, df):
         coords={
             "vulnerability_class": df.index.values,
             "parameter_fragility": df.columns[13:],
-            "branch_fragility": branch_id,
+            "b_fragility": branch_id,
         },
     )
 

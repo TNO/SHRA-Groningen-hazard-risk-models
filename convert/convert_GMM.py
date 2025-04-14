@@ -7,7 +7,7 @@ of Bommer et al. into a xarray data structures, exported in netCDF/HDF5 format.
 """
 
 from pathlib import Path
-import datatree as dt
+import xarray as xr
 
 try:
     import convert_GMMV5
@@ -29,7 +29,7 @@ def convert(base_path):
     output["GMM-V6"] = convert_GMMV6.convert(Path(base_path) / "V6")
     output["GMM-V7"] = convert_GMMV7.convert(Path(base_path) / "V7")
 
-    datatree = dt.DataTree.from_dict(output)
+    datatree = xr.DataTree.from_dict(output)
     return datatree
 
 

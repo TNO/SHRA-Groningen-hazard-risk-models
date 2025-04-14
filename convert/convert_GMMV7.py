@@ -44,7 +44,10 @@ def convert(base_path):
     }
     tau_branches = [tau_branch_name_mapping[k] for k in tau_levels]
 
-    phiss_branch_name_mapping = {"phi_ss_level1": "Lower", "phi_ss_level2": "Upper"}
+    phiss_branch_name_mapping = {
+        "phi_ss_level1": "Lower",
+        "phi_ss_level2": "Upper",
+    }
     phiss_branches = [phiss_branch_name_mapping[k] for k in phiss_levels]
 
     # create parameter dataset and reshape
@@ -59,7 +62,7 @@ def convert(base_path):
             coords={
                 "IM": im_ids_median,
                 "parameter_median": ("p_b", median_parameters),
-                "branch_median": ("p_b", median_branches),
+                "b_median": ("p_b", median_branches),
             },
             attrs={
                 # assemble any data that may be of interest
@@ -69,7 +72,7 @@ def convert(base_path):
         .set_index(
             # reshaping step 1
             # create multi-index on the flattened dimensions
-            {"p_b": ("parameter_median", "branch_median")}
+            {"p_b": ("parameter_median", "b_median")}
         )
         .unstack(
             # reshaping step 2
@@ -115,15 +118,15 @@ def convert(base_path):
     im_ids_sigma = list(map(lambda p: f"Sa[{float(p)}]", sigma_df.index))
     tau = xr.DataArray(
         sigma_df.iloc[:, 0:3],
-        dims=("IM", "branch_tau"),
-        coords={"IM": im_ids_sigma, "branch_tau": tau_branches},
+        dims=("IM", "b_tau"),
+        coords={"IM": im_ids_sigma, "b_tau": tau_branches},
         attrs={"source": [os.path.basename(sigma_file)]},
     )
 
     phiss = xr.DataArray(
         sigma_df.iloc[:, 3:],
-        dims=("IM", "branch_phiss"),
-        coords={"IM": im_ids_sigma, "branch_phiss": phiss_branches},
+        dims=("IM", "b_phiss"),
+        coords={"IM": im_ids_sigma, "b_phiss": phiss_branches},
         attrs={"source": [os.path.basename(sigma_file)]},
     )
 
@@ -133,9 +136,12 @@ def convert(base_path):
     # prepare wierde
     wierde_factor = xr.DataArray(
         data=np.array(
-            [[0.2, 0.25, 0.35, 0.35, 0.1, 0.05], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]]
+            [
+                [0.2, 0.25, 0.35, 0.35, 0.1, 0.05],
+                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            ]
         ),
-        dims=["surface_condition", "T"],
+        dims=("surface_condition", "T"),
         coords={
             "surface_condition": ["wierde", "regular"],
             "T": [0.01, 0.1, 0.2, 0.5, 1.0, 2.0],
@@ -144,60 +150,82 @@ def convert(base_path):
 
     s2s_epsilons = xr.DataArray(
         np.array([-1.645, 0.0, 1.645]),
-        coords={"branch_s2s": ["Lower", "Central", "Upper"]},
+        coords={"b_s2s": ["Lower", "Central", "Upper"]},
     )
 
-    lw_branch_median_weights = xr.DataArray(
-        [[0.2, 0.3, 0.3, 0.2], [0.1, 0.2, 0.3, 0.4]],
+    median_weights = xr.DataArray(
+        [
+            [0.2, 0.3, 0.3, 0.2],
+            [0.1, 0.2, 0.3, 0.4],
+        ],
+        dims=("lt_median_choice", "b_median"),
         coords={
-            "lt_branch_median_choice": ["Low", "High"],
-            "branch_median": ["Lower", "CentralLower", "CentralUpper", "Upper"],
+            "lt_median_choice": ["Low", "High"],
+            "b_median": ["Lower", "CentralLower", "CentralUpper", "Upper"],
+        },
+        # to distinguish between support dimensions and batch dimensions,
+        # we specify the batch dimensions explicitly
+        # - support dims: the support of the weight distribution
+        # - batch dims: identify different variations of the weight distribution
+        attrs={
+            "support_dims": "b_median",
+            "batch_dims": "lt_median_choice",
+            "distribution_type": "probability_mass",
         },
     )
 
-    lw_branch_median_hinges = xr.DataArray(
+    median_hinges = xr.DataArray(
         [3.6, 5.0],
-        coords={
-            "lt_branch_median_choice": ["Low", "High"],
+        coords={"lt_median_choice": ["Low", "High"]},
+    )
+
+    tau_weights = xr.DataArray(
+        [0.2, 0.6, 0.2],
+        coords={"b_tau": ["Lower", "Central", "Upper"]},
+        attrs={
+            "support_dims": "b_tau",
+            "distribution_type": "probability_mass",
         },
     )
 
-    lw_branch_tau_weights = xr.DataArray(
-        [0.2, 0.6, 0.2], coords={"branch_tau": ["Lower", "Central", "Upper"]}
+    phiss_weights = xr.DataArray(
+        [0.5, 0.5],
+        coords={"b_phiss": ["Lower", "Upper"]},
+        attrs={
+            "support_dims": "b_phiss",
+            "distribution_type": "probability_mass",
+        },
     )
 
-    lw_branch_phiss_weights = xr.DataArray(
-        [0.5, 0.5], coords={"branch_phiss": ["Lower", "Upper"]}
-    )
-
-    lw_branch_s2s_weights = xr.DataArray(
-        [0.2, 0.6, 0.2], coords={"branch_s2s": ["Lower", "Central", "Upper"]}
+    s2s_weights = xr.DataArray(
+        [0.2, 0.6, 0.2],
+        coords={"b_s2s": ["Lower", "Central", "Upper"]},
+        attrs={
+            "support_dims": "b_s2s",
+            "distribution_type": "probability_mass",
+        },
     )
 
     # combine into single dataset
-    ds = (
-        xr.Dataset(
-            data_vars={
-                "af_parameters": af_p,
-                "median_parameters": median_p,
-                "correlation_matrix": corr_mat,
-                "tau": tau,
-                "phiss": phiss,
-                "T": t,
-                "wierde_factor": wierde_factor,
-                "s2s_epsilons": s2s_epsilons,
-                "branch_median_hinges": lw_branch_median_hinges,
-                "logic_tree:branch_median": lw_branch_median_weights,
-                "logic_tree:branch_tau": lw_branch_tau_weights,
-                "logic_tree:branch_phiss": lw_branch_phiss_weights,
-                "logic_tree:branch_s2s": lw_branch_s2s_weights,
-            },
-            coords={"gmm_version": "GMM-V7"},
-            attrs={"reference": "Bommer et al. (2021)"},
-        )
-        .transpose("zone", "branch_median", "branch_tau", "branch_phiss", "IM", ...)
-        .sortby("T")
-    )
+    ds = xr.Dataset(
+        data_vars={
+            "af_parameters": af_p,
+            "median_parameters": median_p,
+            "correlation_matrix": corr_mat,
+            "tau": tau,
+            "phiss": phiss,
+            "T": t,
+            "wierde_factor": wierde_factor,
+            "s2s_epsilons": s2s_epsilons,
+            "median_hinges": median_hinges,
+            "w_median": median_weights,
+            "w_tau": tau_weights,
+            "w_phiss": phiss_weights,
+            "w_s2s": s2s_weights,
+        },
+        coords={"gmm_version": "GMM-V7"},
+        attrs={"reference": "Bommer et al. (2021)"},
+    ).sortby("T")
 
     return ds
 
