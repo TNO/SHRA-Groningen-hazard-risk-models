@@ -1,387 +1,241 @@
 import os
-import xarray as xr
+import importlib
 import tempfile
+import collections
 import yaml
+import xarray as xr
+from pathlib import Path
+from copy import deepcopy
 
-from unittest import TestCase
-from rupture_prep import main as rupture_prep_main
-from gmm_tables import main as gmm_tables_main
-from fcm_tables import main as fcm_tables_main
-from hazard_prep import main as hazard_prep_main
-from im_prep import main as im_prep_main
-from risk_prep import main as risk_prep_main
-from exposure_prep import main as exposure_prep_main
-from source_integrator import main as source_integrator_main
-from hazard_integrator import main as hazard_integrator_main
-from risk_integrator import main as risk_integrator_main
-from chaintools.chaintools import tools_configuration as cfg
+from chaintools.chaintools import tools_configuration as tc
+from chaintools.chaintools import tools_xarray as tx
 
-class IntegrationTests(TestCase):
+dirname = os.path.dirname(os.path.abspath(__file__))
+yaml_path = os.path.join(dirname, "config_test.yml")
 
-    test_config_path_v7 = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'example_config_testing_gmmv7.yml')
-    test_config_path_v6 = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'example_config_testing_gmmv6.yml')
 
-    test_config_path_fcm_v7 = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                           'example_config_testing_gmmv7.yml')
-    test_config_path_fcm_TNO2020 = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                                'example_config_testing_fcmTNO2020.yml')
+def tst_module(module):
+    if isinstance(module, str):
+        modules = [module]
+    elif isinstance(module, list):
+        modules = module
+    else:
+        raise TypeError("module must be a string or a list of strings")
+    config = tc.configure([yaml_path])
+    for task in config["tasks"].values():
+        if task["module"]["python_module"] in modules:
+            task["configuration"].update(config.get("generic", {}))
+            # each task may change the current working directory
+            # this is bound to go wrong for relative paths
+            # so we restore the original working directory after each task
+            restore_dir = os.getcwd()
+            try:
+                tst_task(task)
+            except Exception as e:
+                print(f"Error in task {task['module']['python_module']}: {e}")
+                raise e
+            finally:
+                os.chdir(restore_dir)
 
-    test_config_path_hazard_integrator = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                                      'example_config_testing_hazard_integrator.yml')
 
-    def test_rupture_prep(self):
-        # assert
-        # ------
-        module = 'rupture_prep'
-        module_config = cfg.configure([self.test_config_path_v7], module)
-        expected_outcome_file = './tests/res/rupture_prep_testing.zarr'
-        with tempfile.TemporaryDirectory(prefix='temp') as test_out_dir:
-            testing_outcome_file = [test_out_dir, 'rupture_prep.zarr']
-            outcome_path = os.path.join(testing_outcome_file[0], testing_outcome_file[1])
-            module_config['data_sinks'][module]['path'] = testing_outcome_file
-            temp_config_path = self.build_config_file_for_module(module_config, test_out_dir, module=module)
+def tst_task(task):
+    config_ref = deepcopy(task["configuration"])
+    config_tst = deepcopy(task["configuration"])
+    config_ref["data_sinks"] = rename_zarr_to_zip(config_ref["data_sinks"])
+    if "data_sources" in config_tst:
+        config_tst["data_sources"] = rename_zarr_to_zip(config_tst["data_sources"])
+    with tempfile.TemporaryDirectory() as dir:
+        config_tst["data_sinks"] = move_to_dir(config_tst["data_sinks"], dir)
+        temp_config_path = build_config_file_for_task(config_tst, dir).as_posix()
+        module = get_module(
+            task["module"]["python_module"],
+            task["module"].get("python_submodule", None),
+        )
+        module.main(["dummy", temp_config_path])
+        for sink_name in config_tst["data_sinks"]:
+            ds_tst = tx.data_source(**config_tst["data_sinks"][sink_name])
+            ds_ref = tx.data_source(**config_ref["data_sinks"][sink_name])
+            if not isinstance(ds_ref, Path):
+                if isinstance(ds_tst, (xr.DataArray, xr.Dataset)):
+                    dims = list(ds_ref.dims)
+                    ds_tst = ds_tst.transpose(*dims)
+                    ds_ref = ds_ref.transpose(*dims)
+                    xr.testing.assert_allclose(ds_tst, ds_ref)
+                elif isinstance(ds_tst, xr.DataTree):
+                    assert ds_tst.equals(ds_ref)
+            else:
+                print(
+                    "Only tested that the main did not crash. Did not compare against reference"
+                )
+                print("Should only happen for visualization results")
 
-            # act
-            # ---
-            rupture_prep_main(['',temp_config_path])
 
-            # assert
-            # ------
-            testing_outcome = xr.open_zarr(outcome_path)
-            expected_outcome = xr.open_zarr(expected_outcome_file)
-            xr.testing.assert_allclose(expected_outcome, testing_outcome)
+def test_parse_input():
+    tst_module("parse_input")
 
-    def test_source_integrator(self):
-        # assert
-        # ------
-        module = 'source_integrator'
-        module_config = cfg.configure([self.test_config_path_v7], module)
-        expected_outcome_file = './tests/res/source_distribution_testing.h5'
-        with tempfile.TemporaryDirectory(prefix='temp') as test_out_dir:
-            testing_outcome_file = [test_out_dir, 'source_distribution.h5']
-            outcome_path = os.path.join(testing_outcome_file[0], testing_outcome_file[1])
-            module_config['data_sinks']['source_distribution']['path'] = testing_outcome_file
-            temp_config_path = self.build_config_file_for_module(module_config, test_out_dir, module=module)
 
-            # act
-            # ---
-            source_integrator_main(['', temp_config_path])
+def test_gmm_tables():
+    tst_module("tabulate_gmm")
 
-            # assert
-            # ------
-            testing_outcome = xr.load_dataset(outcome_path, engine='h5netcdf')
-            expected_outcome = xr.load_dataset(expected_outcome_file, engine='h5netcdf')
-            xr.testing.assert_allclose(expected_outcome, testing_outcome)
 
-    def test_gmmv6_tables(self):
-        """
-        Integration test for the workflow to generate ground motion distribution parameter tables based on input the
-        variables. Tests for 2 zones only, with a coarse parameter grid. Tests for GMM-V6
-        """
-        self.gmm_tables_function(gmm_version='GMM_V6')
+def test_fcm_tables():
+    tst_module("tabulate_fcm")
 
-    def test_gmmv7_tables(self):
-        """
-        Integration test for the workflow to generate ground motion distribution parameter tables based on input the
-        variables. Tests for 2 zones only, with a coarse parameter grid. Tests for GMM-V7.
-        """
-        self.gmm_tables_function(gmm_version='GMM_V7')
 
-    def test_hazard_prep_gmmv6(self):
-        """
-        Integration test for the workflow to generate the hazard prep (conditional probabilities of exceedance). Tests
-        for 2 zones only, with a coarse parameter grid. Tests for GMM-V6.
-        """
-        self.hazard_prep_function(gmm_version='GMM_V6')
+def test_prepare_hazard_lookup():
+    tst_module("prepare_hazard_lookup")
 
-    def test_hazard_prep_gmmv7(self):
-        """
-        Integration test for the workflow to generate the hazard prep (conditional probabilities of exceedance). Tests
-        for 2 zones only, with a coarse parameter grid. Tests for GMM-V7.
-        """
-        self.hazard_prep_function(gmm_version='GMM_V7')
 
-    def test_im_prep_gmmv6(self):
-        """
+def test_prepare_im_lookup():
+    tst_module("prepare_im_lookup")
 
-        """
-        self.im_prep_function(gmm_version='GMM_V6')
 
-    def test_im_prep_gmmv7(self):
-        """
+def test_prepare_im_lookup_mom():
+    tst_module("prepare_im_lookup_mom")
 
-        """
-        self.im_prep_function(gmm_version='GMM_V7')
 
-    def test_fcm_tables_fcmV7(self):
-        """
-        Integration test for the workflow to generate tables of fragity and consequence model parameters for FCM V7
-        """
-        self.fcm_tables_function(fcm_version='FCM_V7')
+def test_prepare_risk_lookup():
+    tst_module("prepare_risk_lookup")
 
-    def test_fcm_tables_fcmTNO2020(self):
-        """
-        Integration test for the workflow to generate tables of fragity and consequence model parameters for FCM V7
-        """
-        self.fcm_tables_function(fcm_version='FCM_TNO2020')
 
-    def test_risk_prep_gmmv6_fcmv7(self):
-        """
+def test_process():
+    tst_module("process")
 
-        """
-        self.risk_prep_function(gmm_version='GMM_V6')
 
-    def test_risk_prep_gmmv7_fcmv7(self):
-        """
+def test_prepare_rupture_lookup():
+    tst_module("prepare_rupture_lookup")
 
-        """
-        self.risk_prep_function(gmm_version='GMM_V7')
 
-    def test_risk_prep_gmmv7_fcmTNO2020(self):
-        """
+def test_exposure_prep():
+    tst_module("prepare_exposure")
 
-        """
-        self.risk_prep_function(gmm_version='GMM_V7', fcm_version='FCM_TNO2020')
 
-    def test_hazard_integrator(self):
-        """
+def test_aggregate_source():
+    tst_module("aggregate_source")
 
-        """
-        # arrange
-        # -------
-        module = 'hazard_integrator'
-        module_config = cfg.configure([self.test_config_path_hazard_integrator], module)
-        expected_outcome_file = './tests/res/hazard_risk_testing.h5'
-        with tempfile.TemporaryDirectory(prefix='temp') as test_out_dir:
-            testing_outcome_file = [test_out_dir, 'hazard_risk_testing.h5']
-            outcome_path = os.path.join(testing_outcome_file[0], testing_outcome_file[1])
-            module_config['data_sinks']['hazard']['path'] = testing_outcome_file
-            temp_config_path = self.build_config_file_for_module(module_config, test_out_dir, module=module)
 
-            # act
-            # ---
-            hazard_integrator_main(['', temp_config_path])
+def test_aggregate_exposure():
+    tst_module("aggregate_exposure")
 
-            # assert
-            # ------
-            testing_outcome = xr.open_dataset(outcome_path, group='hazard/GMM-V7', engine='h5netcdf')
-            expected_outcome = xr.open_dataset(expected_outcome_file, group='hazard/GMM-V7', engine='h5netcdf')
-            xr.testing.assert_allclose(expected_outcome, testing_outcome)
 
-    def test_exposure_prep(self):
-        """
+def test_aggregate_exposure_ds1():
+    tst_module("aggregate_exposure_ds1")
 
-        """
-        # arrange
-        # -------
-        module = 'exposure_prep'
-        sink_1 = 'exposure_grid'
-        sink_2 = 'exposure_database'
-        module_config = cfg.configure([self.test_config_path_v7], module)
-        expected_outcome_file = './tests/res/exposure_prep_testing.h5'
-        with tempfile.TemporaryDirectory(prefix='temp') as test_out_dir:
-            testing_outcome_file = [test_out_dir, 'exposure_prep.h5']
-            outcome_path = os.path.join(testing_outcome_file[0], testing_outcome_file[1])
-            module_config['data_sinks'][sink_1]['path'] = testing_outcome_file
-            module_config['data_sinks'][sink_2]['path'] = testing_outcome_file
-            temp_config_path = self.build_config_file_for_module(module_config, test_out_dir, module=module)
 
-            # act
-            # ---
-            exposure_prep_main(['', temp_config_path])
+def test_prepare_exposure_ds1():
+    tst_module("prepare_exposure_ds1")
 
-            # assert
-            # ------
-            testing_outcome = xr.open_dataset(outcome_path, group=sink_1, engine='h5netcdf')
-            expected_outcome = xr.open_dataset(expected_outcome_file, group=sink_1, engine='h5netcdf')
-            xr.testing.assert_allclose(expected_outcome, testing_outcome)
-            testing_outcome = xr.open_dataset(outcome_path, group=sink_2, engine='h5netcdf')
-            expected_outcome = xr.open_dataset(expected_outcome_file, group=sink_2, engine='h5netcdf')
-            xr.testing.assert_allclose(expected_outcome, testing_outcome)
 
-    def fcm_tables_function(self, fcm_version: str):
-        """
-        Integration test for the workflow to generate tables of fragity and consequence model parameters conditional
-        on surface ground motions, as specified in the configuration file
-        """
+def test_integrate_by_zones():
+    tst_module("integrate_by_zones")
 
-        module = 'fcm_tables'
-        if fcm_version == 'FCM_TNO2020':
-            module_config = cfg.configure([self.test_config_path_fcm_TNO2020], module)
-        elif fcm_version == 'FCM_V7':
-            module_config = cfg.configure([self.test_config_path_fcm_v7], module)
-        else:
-            raise UserWarning('Requested unknown version of FCM for testing')
 
-        testing_group = module_config['data_sinks'][module]['group']
-        expected_outcome_file = './tests/res/FCM_tables_testing.h5'
-        with tempfile.TemporaryDirectory(prefix='temp') as test_out_dir:
-            testing_outcome_file = [test_out_dir, 'FCM_tables.h5']
-            outcome_path = os.path.join(testing_outcome_file[0], testing_outcome_file[1])
-            module_config['data_sinks'][module]['path'] = testing_outcome_file
-            temp_config_path = self.build_config_file_for_module(module_config, test_out_dir, module=module)
+def test_extract_hazard():
+    tst_module("extract_hazard")
 
-            # act
-            # ---
-            fcm_tables_main(['', temp_config_path])
 
-            # assert
-            # ------
-            testing_outcome = xr.open_dataset(outcome_path, group=testing_group, engine='h5netcdf')
-            expected_outcome = xr.open_dataset(expected_outcome_file, group=testing_group, engine='h5netcdf')
-            xr.testing.assert_allclose(expected_outcome, testing_outcome)
+def test_integrate_by_nodes():
+    tst_module("integrate_by_nodes")
 
-    def gmm_tables_function(self, gmm_version: str):
-        """
-        Integration test for the workflow to generate ground motion distribution parameter tables based on input the
-        variables.
-        """
-        # arrange
-        # -------
-        module = 'gmm_tables'
-        if gmm_version == 'GMM_V6':
-            module_config = cfg.configure([self.test_config_path_v6], module)
-            expected_outcome_file = './tests/res/GMM_tables_testing_gmmv6.h5'
-        elif gmm_version == 'GMM_V7':
-            module_config = cfg.configure([self.test_config_path_v7], module)
-            expected_outcome_file = './tests/res/GMM_tables_testing_gmmv7.h5'
-        else:
-            raise UserWarning('Requested unknown version of GMM')
 
-        testing_group = module_config['data_sinks'][module]['group']
-        with tempfile.TemporaryDirectory(prefix='temp') as test_out_dir:
-            testing_outcome_file = [test_out_dir, 'GMM_tables.h5']
-            outcome_path = os.path.join(testing_outcome_file[0], testing_outcome_file[1])
-            module_config['data_sinks'][module]['path'] = testing_outcome_file
-            temp_config_path = self.build_config_file_for_module(module_config, test_out_dir, module=module)
+def test_confront_exposure():
+    tst_module("confront_exposure")
 
-            # act
-            # ---
-            gmm_tables_main(['', temp_config_path])
 
-            # assert
-            # ------
-            testing_outcome = xr.open_dataset(outcome_path, group=testing_group, engine='h5netcdf')
-            expected_outcome = xr.open_dataset(expected_outcome_file, group=testing_group, engine='h5netcdf')
-            xr.testing.assert_allclose(expected_outcome, testing_outcome)
+def test_integrate_ds1():
+    tst_module("integrate_ds1")
 
-    def hazard_prep_function(self, gmm_version: str):
-        """
-        Integration test for the workflow to generate the hazard prep (conditional probabilities of exceedance). Tests
-        for 2 zones only, with a coarse parameter grid.
-        """
-        # arrange
-        # -------
-        module = 'hazard_prep'
-        if gmm_version == 'GMM_V6':
-            module_config = cfg.configure([self.test_config_path_v6], module)
-            expected_outcome_file = './tests/res/hazard_prep_testing_gmmv6.h5'
-        elif gmm_version == 'GMM_V7':
-            module_config = cfg.configure([self.test_config_path_v7], module)
-            expected_outcome_file = './tests/res/hazard_prep_testing_gmmv7.h5'
-        else:
-            raise UserWarning('Requested unknown version of GMM')
 
-        with tempfile.TemporaryDirectory(prefix='temp') as test_out_dir:
-            testing_outcome_file = [test_out_dir, 'hazard_prep.h5']
-            outcome_path = os.path.join(testing_outcome_file[0], testing_outcome_file[1])
-            module_config['data_sinks'][module]['path'] = testing_outcome_file
-            temp_config_path = self.build_config_file_for_module(module_config, test_out_dir, module=module)
+def test_visualize_hazard():
+    tst_module("visualize_hazard")
 
-            # act
-            # ---
-            hazard_prep_main(['', temp_config_path])
 
-            # assert
-            # ------
-            # testing_outcome = xr.open_dataset(outcome_path, engine='h5netcdf')
-            # expected_outcome = xr.open_dataset(expected_outcome_file, engine='h5netcdf')
-            # xr.testing.assert_allclose(expected_outcome, testing_outcome)
+def test_visualize_risk():
+    tst_module("visualize_risk")
 
-    def im_prep_function(self, gmm_version: str):
-        """
 
-        """
-        # arrange
-        # -------
-        module = 'im_prep'
-        if gmm_version == 'GMM_V6':
-            module_config = cfg.configure([self.test_config_path_v6], module)
-            expected_outcome_file = './tests/res/im_prep_testing_gmmv6.h5'
-        elif gmm_version == 'GMM_V7':
-            module_config = cfg.configure([self.test_config_path_v7], module)
-            expected_outcome_file = './tests/res/im_prep_testing_gmmv7.h5'
-        else:
-            raise UserWarning('Requested unknown version of GMM')
+def test_exposure_visualization():
+    pass
+    tst_module("visualize_exposure")
 
-        with tempfile.TemporaryDirectory(prefix='temp') as test_out_dir:
-            testing_outcome_file = [test_out_dir, 'im_prep.h5']
-            outcome_path = os.path.join(testing_outcome_file[0], testing_outcome_file[1])
-            module_config['data_sinks'][module]['path'] = testing_outcome_file
-            temp_config_path = self.build_config_file_for_module(module_config, test_out_dir, module=module)
 
-            # act
-            # ---
-            im_prep_main(['',temp_config_path])
+def build_config_file_for_task(config: dict, dir: str, config_name: str = None) -> Path:
+    """
+    Write and save a new configuration .yaml file for a specific task.
+    :param config: Dictionary with configuration for a specific task
+    :param dir: Directory where the configuration file will be stored
+    :param config_name: Optional, name of the configuration file.
+    :return: Returns the path to the new configuration file.
+    """
+    if config_name is None:
+        config_name = "temp_config.yml"
+    yml_path = Path(dir) / config_name
+    with open(yml_path, "w") as f:
+        yaml.dump(config, f)
 
-            # assert
-            # ------
-            testing_outcome = xr.open_dataset(outcome_path, engine="h5netcdf")
-            expected_outcome = xr.open_dataset(expected_outcome_file, engine="h5netcdf")
-            testing_outcome = testing_outcome.transpose(*expected_outcome.dims)
-            expected_outcome = expected_outcome.transpose(*expected_outcome.dims)
-            xr.testing.assert_allclose(expected_outcome, testing_outcome)
+    return yml_path
 
-    def risk_prep_function(self, gmm_version: str, fcm_version='FCM_V7'):
-        """
 
-        """
+def rename_zarr_to_zip(data_stores_in):
+    data_stores = deepcopy(data_stores_in)
+    for name, data in data_stores.items():
+        data_stores[name] = _rename_zarr_to_zip(data)
+    return data_stores
 
-        # arrange
-        # -------
-        module = 'risk_prep'
-        if gmm_version == 'GMM_V6':
-            module_config = cfg.configure([self.test_config_path_v6], module)
-            expected_outcome_file = './tests/res/risk_prep_testing_gmmv6.h5'
-        elif gmm_version == 'GMM_V7' and fcm_version == 'FCM_V7':
-            module_config = cfg.configure([self.test_config_path_v7], module)
-            expected_outcome_file = './tests/res/risk_prep_testing_gmmv7.h5'
-        elif gmm_version == 'GMM_V7' and fcm_version == 'FCM_TNO2020':
-            module_config = cfg.configure([self.test_config_path_fcm_TNO2020], module)
-            expected_outcome_file = './tests/res/risk_prep_testing_gmmv7_fcmTNO2020.h5'
-        else:
-            raise UserWarning('Requested unknown version of GMM')
 
-        with tempfile.TemporaryDirectory(prefix='temp') as test_out_dir:
-            testing_outcome_file = [test_out_dir, 'risk_prep.h5']
-            outcome_path = os.path.join(testing_outcome_file[0], testing_outcome_file[1])
-            module_config['data_sinks'][module]['path'] = testing_outcome_file
-            temp_config_path = self.build_config_file_for_module(module_config, test_out_dir, module=module)
+def _rename_zarr_to_zip(data):
+    if isinstance(data, collections.abc.Sequence):
+        return [_rename_zarr_to_zip(d) for d in data]
+    elif isinstance(data, collections.abc.Mapping):
+        if "path" in data:
+            path = tx.construct_path(data["path"])
+            if path.suffix == ".zarr":
+                data["path"] = path.with_suffix(".zip").as_posix()
+        return data
 
-            # act
-            # ---
-            risk_prep_main(['', temp_config_path])
 
-            # assert
-            # ------
-            testing_outcome = xr.load_dataset(outcome_path, engine="h5netcdf")
-            expected_outcome = xr.load_dataset(expected_outcome_file, engine="h5netcdf")
-            xr.testing.assert_allclose(expected_outcome, testing_outcome)
+def move_to_dir(data_stores_in, dir):
+    data_stores = deepcopy(data_stores_in)
+    for name, data in data_stores.items():
+        data_stores[name] = _move_to_dir(data, dir)
+    return data_stores
 
-    @staticmethod
-    def build_config_file_for_module(config: dict, dir: str, module: str, config_name: str= 'temp_config.yml') -> str:
-        """
-        Write and save a new configuration .yaml file for a specific module.
-        :param config: Dictionary with configuration for a specific module
-        :param dir: Directory where the configuration files will be stored
-        :param module: Name of the module
-        :param config_name: Optional, name of the configuration file.
-        :return: Returns the path to the new configuration file.
-        """
 
-        temp_module_config = {'modules': {module: config}}
-        temp_yml_path = os.path.join(dir, config_name)
-        with open(temp_yml_path, 'w') as f:
-            yaml.dump(temp_module_config, f)
+def _move_to_dir(data, dir):
+    if isinstance(data, collections.abc.Sequence):
+        return [_move_to_dir(d, dir) for d in data]
+    elif isinstance(data, collections.abc.Mapping):
+        if "path" in data:
+            path = tx.construct_path(data["path"])
+            data["path"] = [dir, path.name]
+        return data
 
-        return temp_yml_path
+
+def get_module(module_name, sub_module):
+    if not sub_module:
+        module = importlib.import_module(module_name)
+    else:
+        module_name = "." + module_name
+        module = importlib.import_module(module_name, sub_module)
+    return module
+
+
+if __name__ == "__main__":
+    test_exposure_prep()
+    test_parse_input()
+    test_gmm_tables()
+    test_fcm_tables()
+    test_prepare_hazard_lookup()
+    test_prepare_im_lookup()
+    test_prepare_im_lookup_mom()
+    test_prepare_risk_lookup()
+    test_process()
+    test_prepare_rupture_lookup()
+    test_aggregate_source()
+    test_integrate_by_zones()
+    test_extract_hazard()
+    test_integrate_by_nodes()
+    test_confront_exposure()
+    test_integrate_ds1()
+    test_visualize_hazard()
+    test_visualize_risk()

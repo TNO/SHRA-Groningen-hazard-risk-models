@@ -1,0 +1,808 @@
+# SECTION 1: GENERIC SETTINGS
+zarr_to_zip: True
+
+# SECTION 1.1: MODEL VERSIONS
+model_versions:
+  fcm_version: &fcm_version FCM-V7
+  zone_selection: &zone_selection ["308", "3111", "322"]
+
+# SECTION 1.2: PATHS to FILES and DIRECTORIES
+paths:
+  # base paths
+
+  # all other paths may be relative of absolute
+  internal: &internal ./tests/res/internal
+  external: &external ./tests/res/external
+  gmm_input_path: &gmm_input_path ./convert/res
+  fcm_input_path: &fcm_input_path ./convert/res
+  ds1_input_path: &ds1_input_path ./convert/res/ds1
+
+  # internal files: sources / sinks
+  gmm_config_file: &gmm_config_file [*internal, gmm_config.zarr]
+  gmm_tables_file: &gmm_tables_file [*internal, gmm_tables.zarr]
+  fcm_config_file: &fcm_config_file [*internal, fcm_config.zarr]
+  fcm_tables_file: &fcm_tables_file [*internal, fcm_tables.zarr]
+  hazard_prep_file: &hazard_prep_file [*internal, hazard_prep.zarr]
+  im_prep_file: &im_prep_file [*internal, im_prep.zarr]
+  risk_prep_file: &risk_prep_file [*internal, risk_prep.zarr]
+  exposure_prep_file: &exposure_prep_file [*internal, exposure_prep.zarr]
+  rupture_prep_file: &rupture_prep_file [*internal, rupture_prep.zarr]
+  logic_tree_file: &logic_tree_file [*internal, logic_tree.zarr]
+  sd_file: &sd_file [*internal, source_distribution.zarr]
+  hazard_file: &hazard_file [*internal, hazard.zarr]
+  risk_file: &risk_file [*internal, risk.zarr]
+  risk_distribution_file: &risk_distribution_file [*internal, risk_distribution.zarr]
+  fast_risk_file: &fast_risk_file [*internal, fast_risk.zarr]
+  excerpt_file: &excerpt_file [*internal, excerpt.h5]
+  exposure_file: &exposure_file [*internal, exposure.zarr]
+  visualization_path: &visualization_path [*internal, visualization_results]
+
+  # external input files and directories
+  zonation_file: &zonation_file [*external, Geological_zones_V6.zip]
+  edb_file: &edb_file [*external, example_EDB.csv]
+  forecast_file: &forecast_file [*external, ssm_forecast_test.h5]
+  p2p_empirical_file: &p2p_empirical_file [*external, p2p_empirical.h5]
+  ds1_edb_file: &ds1_edb_file [*external, example_EDB_ds1.csv]
+  ds1_gmm_coefficient_file: &ds1_gmm_coefficient_file [*ds1_input_path, gmm_2021.json]
+  ds1_fcm_coefficient_file: &ds1_fcm_coefficient_file [*ds1_input_path, fcm.yml]
+  ds1_vs30_file: &ds1_vs30_file [*ds1_input_path, vs30_v7.csv]
+
+
+# SECTION 1.3: DATA STORES
+data_stores:
+  gmm_config_tree: &gmm_config_tree
+    type: xarray_datatree
+    path: *gmm_config_file
+
+  fcm_config_tree: &fcm_config_tree
+    type: xarray_datatree
+    path: *fcm_config_file
+
+  gmm_config_V6: &gmm_config_V6
+    type: xarray_dataset
+    path: *gmm_config_file
+    group: GMM-V6
+
+  gmm_config_V7: &gmm_config_V7
+    type: xarray_dataset
+    path: *gmm_config_file
+    group: GMM-V7
+
+  fcm_config: &fcm_config
+    type: xarray_dataset
+    path: *fcm_config_file
+    group: *fcm_version
+
+  gmm_tables_V6: &gmm_tables_V6
+    type: xarray_dataset
+    path: *gmm_tables_file
+    group: GMM-V6
+
+  gmm_tables_V7: &gmm_tables_V7
+    type: xarray_dataset
+    path: *gmm_tables_file
+    group: GMM-V7
+
+  fcm_tables: &fcm_tables
+    type: xarray_dataset
+    path: *fcm_tables_file
+    group: *fcm_version
+
+  hazard_prep_V6: &hazard_prep_V6
+    type: xarray_dataset
+    path: *hazard_prep_file
+    group: GMM-V6
+
+  hazard_prep_V7: &hazard_prep_V7
+    type: xarray_dataset
+    path: *hazard_prep_file
+    group: GMM-V7
+
+  im_prep_V6: &im_prep_V6
+    type: xarray_dataset
+    path: *im_prep_file
+    group: GMM-V6
+
+  im_prep_num_V6: &im_prep_num_V6
+    type: xarray_dataset
+    path: *im_prep_file
+    group: [GMM-V6, num]
+
+  im_prep_haz_V6: &im_prep_haz_V6
+    type: xarray_dataset
+    path: *im_prep_file
+    group: [GMM-V6, hazard]
+
+
+  im_prep_V7: &im_prep_V7
+    type: xarray_dataset
+    path: *im_prep_file
+    group: GMM-V7
+
+  im_prep_num_V7: &im_prep_num_V7
+    type: xarray_dataset
+    path: *im_prep_file
+    group: [GMM-V7, num]
+
+  im_prep_haz_V7: &im_prep_haz_V7
+    type: xarray_dataset
+    path: *im_prep_file
+    group: [GMM-V7, hazard]
+
+  risk_prep_V6: &risk_prep_V6
+    type: xarray_dataset
+    path: *risk_prep_file
+    group: [GMM-V6, *fcm_version]
+
+  risk_prep_V7: &risk_prep_V7
+    type: xarray_dataset
+    path: *risk_prep_file
+    group: [GMM-V7, *fcm_version]
+
+  risk_prep_excerpt: &risk_prep_excerpt
+    type: xarray_dataset
+    path: *excerpt_file
+
+  exposure_grid: &exposure_grid
+    type: xarray_dataset
+    path: *exposure_prep_file
+    group: exposure_grid
+
+  exposure_database: &exposure_database
+    type: xarray_dataset
+    path: *exposure_prep_file
+    group: exposure_database
+
+  exposure_grid_ds1: &exposure_grid_ds1
+    type: xarray_dataset
+    path: *exposure_prep_file
+    group: [exposure_grid, ds1]
+
+  exposure_database_ds1: &exposure_database_ds1
+    type: xarray_dataset
+    path: *exposure_prep_file
+    group: [exposure_database, ds1]
+
+  rupture_prep: &rupture_prep
+    type: xarray_dataset
+    path: *rupture_prep_file
+
+  logic_tree_gmm_V6: &logic_tree_gmm_V6
+    type: xarray_dataset
+    path: *logic_tree_file
+    group: GMM-V6
+
+  logic_tree_gmm_V7: &logic_tree_gmm_V7
+    type: xarray_dataset
+    path: *logic_tree_file
+    group: GMM-V7
+
+  logic_tree_fcm: &logic_tree_fcm
+    type: xarray_dataset
+    path: *logic_tree_file
+    group: *fcm_version
+
+  logic_tree_ssm: &logic_tree_ssm
+    type: xarray_dataset_inline
+    from_dict:
+      dims: [branch_rate, branch_mm, branch_mmax]
+      coords:
+        branch_rate:
+          dims: branch_rate
+          data: [elastic]
+        branch_mm:
+          dims: branch_mm
+          data: [split_thickness, stress_tanh]
+        branch_mmax:
+          dims: branch_mmax
+          data: [4.0, 4.5, 5.0, 5.5, 6.0, 6.5]
+      data_vars:
+        w_rate:
+          dims: branch_rate
+          data: [1.0]
+          attrs:
+            support_dims: branch_rate
+            distribution_type: probability_mass
+        w_mm:
+          dims: branch_mm
+          data: [0.5, 0.5]
+          attrs:
+            support_dims: branch_mm
+            distribution_type: probability_mass
+        w_mmax:
+          dims: branch_mmax
+          data: [0.27, 0.405, 0.1875, 0.1075, 0.025, 0.005]
+          attrs:
+            support_dims: branch_mmax
+            distribution_type: probability_mass
+
+  lt_V6: &lt_V6
+    - *logic_tree_ssm
+    - *logic_tree_gmm_V6
+    - *logic_tree_fcm
+
+  lt_V7: &lt_V7
+    - *logic_tree_ssm
+    - *logic_tree_gmm_V7
+    - *logic_tree_fcm
+
+  forecast: &forecast
+    type: xarray_dataarray
+    path: *forecast_file
+    group: forecast/forecast
+
+  source_distribution: &source_distribution
+    type: xarray_dataset
+    path: *sd_file
+
+  p2p_empirical: &p2p_empirical
+    type: xarray_dataarray
+    path: *p2p_empirical_file
+
+  hazard_curves: &hazard_curves
+    type: xarray_dataset
+    path: *hazard_file
+    group: hazard_curves
+
+  hazard_samples: &hazard_samples
+    type: xarray_dataset
+    path: *hazard_file
+    group: hazard_samples
+
+  risk: &risk
+    type: xarray_dataset
+    path: *risk_file
+    group: risk
+
+  risk_distribution: &risk_distribution
+    type: xarray_dataset
+    path: *risk_distribution_file
+
+  fast_risk: &fast_risk
+    type: xarray_dataset
+    path: *fast_risk_file
+    group: ds2_cs3
+
+  fast_risk_ds1: &fast_risk_ds1
+    type: xarray_dataset
+    path: *fast_risk_file
+    group: ds1
+
+  exposure_ds1: &exposure_ds1
+    type: xarray_dataset
+    path: *exposure_file
+    group: DS1
+
+  exposure: &exposure
+    type: xarray_dataset
+    path: *exposure_file
+  
+  zonation: &zonation
+    type: geopandas
+    path: *zonation_file
+    dtype: { ID_V6: str }
+    index_col: ID_V6
+
+  edb: &edb
+    type: csv
+    path: *edb_file
+    dtype: { bag_building_id: str, wiede_flag: bool }
+    index_col: bag_building_id
+    crs: EPSG:28992
+    spatial_dims: [point_x, point_y]
+
+  ds1_edb: &ds1_edb
+    type: pandas
+    path: *ds1_edb_file
+    dtype: { postcode: str, bag_building_id: str }
+    index_col: bag_building_id
+    rename: { point_x: x, point_y: y }
+  ds1_gmm_coefficient: &ds1_gmm_coefficient
+    type: pandas
+    path: *ds1_gmm_coefficient_file
+    to_array: component
+    rename: { index: coefficient }
+  ds1_fcm_coefficient: &ds1_fcm_coefficient
+    type: yaml
+    path: *ds1_fcm_coefficient_file
+  ds1_vs30: &ds1_vs30
+    type: pandas
+    path: *ds1_vs30_file
+    dtype: { postcode: str }
+    index_col: postcode
+    variable: vs30
+
+  visualization_results: &visualization_results
+    type: path
+    path: *visualization_path
+
+# SECTION 1.4: DIMENSIONS and COORDINATES
+dimensions:
+  magnitude: &magnitude
+    length: 5
+    interval: [1.5, 6.5]
+  distance_hypocenter: &distance_hypocenter
+    length: 5
+    sequence_spacing: log
+    interval: [3.0, 70.0]
+    units: km
+  distance_rupture: &distance_rupture
+    length: 5
+    sequence_spacing: log
+    interval: [3.0, 70.0]
+    units: km
+  gm_reference: &gm_reference # allow for other ranges
+    length: 25
+  gm_surface: &gm_surface
+    length: 5
+
+# supplementary coordinates if more than one is needed for a dimension
+coordinates: &coordinates
+  SA_g_reference: &SA_g_reference
+    dim: gm_reference
+    sequence_spacing: log
+    interval: [1.0e-5, 10.0]
+    units: g
+  SA_reference: &SA_reference
+    <<: *SA_g_reference
+    multiplier: 981.0 # unit conversion from g to cm/s2
+    units: "cm/s2"
+  SA_g_surface: &SA_g_surface
+    <<: *SA_g_reference
+    dim: gm_surface
+  SA_surface: &SA_surface
+    <<: *SA_g_surface
+    multiplier: 981.0 # unit conversion from g to cm/s2
+    units: "cm/s2"
+
+# SECTION 2: MODULE SPECIFIC SETTINGS
+# Used for traceability and reproducability purposes.
+# Not required for running individual models and test
+modules:
+  generic_module: &generic_module
+    python_path: python
+
+# SECTION 3: TASKS
+
+
+tasks:
+  parse_input:
+    module:
+      <<: *generic_module
+      python_module: parse_input
+    configuration:
+      gmm_path: *gmm_input_path
+      fcm_path: *fcm_input_path
+      data_sinks:
+        gmm_config: *gmm_config_tree
+        fcm_config: *fcm_config_tree
+      file_mode: w
+
+  gmm_tables_V6:
+    module:
+      <<: *generic_module
+      python_module: tabulate_gmm
+    configuration: &configuration_gmm_tables
+      data_sources:
+        gmm_config: *gmm_config_V6
+      data_sinks:
+        tables: *gmm_tables_V6
+        logic_tree: *logic_tree_gmm_V6
+      dimensions:
+        magnitude: *magnitude
+        distance_rupture: *distance_rupture
+        gm_reference: *gm_reference
+      sel:
+        zone: *zone_selection
+      coordinates:
+        SA_reference: *SA_reference
+        SA_g_reference: *SA_g_reference
+      file_mode: w
+
+  gmm_tables_V7:
+    module:
+      <<: *generic_module
+      python_module: tabulate_gmm
+    configuration:
+      <<: *configuration_gmm_tables
+      data_sources:
+        gmm_config: *gmm_config_V7
+      data_sinks:
+        tables: *gmm_tables_V7
+        logic_tree: *logic_tree_gmm_V7
+
+  fcm_tables:
+    module:
+      <<: *generic_module
+      python_module: tabulate_fcm
+    configuration:
+      data_sources:
+        fcm_config: *fcm_config
+      data_sinks:
+        tables: *fcm_tables
+        logic_tree: *logic_tree_fcm
+      dimensions:
+        gm_surface: *gm_surface
+      coordinates:
+        SA_surface: *SA_surface
+        SA_g_surface: *SA_g_surface
+      file_mode: w
+
+  hazard_prep_V6:
+    module:
+      <<: *generic_module
+      python_module: prepare_hazard_lookup
+    configuration: &configuration_hazard_prep
+      data_sources:
+        gmm_tables: *gmm_tables_V6
+      data_sinks:
+        output: *hazard_prep_V6
+      dimensions:
+        gm_reference: *gm_reference
+        gm_surface: *gm_surface
+      coordinates: *coordinates
+      file_mode: w
+
+  hazard_prep_V7:
+    module:
+      <<: *generic_module
+      python_module: prepare_hazard_lookup
+    configuration:
+      <<: *configuration_hazard_prep
+      data_sources:
+        gmm_tables: *gmm_tables_V7
+      data_sinks:
+        output: *hazard_prep_V7
+
+  im_prep_V6:
+    module:
+      <<: *generic_module
+      python_module: prepare_im_lookup
+    configuration: &configuration_im_prep
+      data_sources:
+        fcm_config: *fcm_config
+        gmm_config: *gmm_config_V6
+        gmm_tables: *gmm_tables_V6
+      data_sinks:
+        output: *im_prep_V6
+      dimensions:
+        gm_reference: *gm_reference
+        gm_surface: *gm_surface
+      coordinates: *coordinates
+      sel:
+        zone: *zone_selection
+      n_sample: 100
+      n_batch: 1
+      file_mode: w
+
+  im_prep_num_V6:
+    module:
+      <<: *generic_module
+      python_module: prepare_im_lookup_mom
+    configuration:
+      <<: *configuration_im_prep
+      data_sources:
+        fcm_config: *fcm_config
+        gmm_config: *gmm_config_V6
+        gmm_tables: *gmm_tables_V6
+        p2p_empirical: *p2p_empirical
+      data_sinks:
+        output: *im_prep_num_V6
+        hazard: *im_prep_haz_V6
+
+  im_prep_V7:
+    module:
+      <<: *generic_module
+      python_module: prepare_im_lookup
+    configuration:
+      <<: *configuration_im_prep
+      data_sources:
+        fcm_config: *fcm_config
+        gmm_config: *gmm_config_V7
+        gmm_tables: *gmm_tables_V7
+      data_sinks:
+        output: *im_prep_V7
+
+  im_prep_num_V7:
+    module:
+      <<: *generic_module
+      python_module: prepare_im_lookup_mom
+    configuration:
+      <<: *configuration_im_prep
+      data_sources:
+        fcm_config: *fcm_config
+        gmm_config: *gmm_config_V7
+        gmm_tables: *gmm_tables_V7
+        p2p_empirical: *p2p_empirical
+      data_sinks:
+        output: *im_prep_num_V7
+        hazard: *im_prep_haz_V7
+
+  risk_prep_V7:
+    module:
+      <<: *generic_module
+      python_module: prepare_risk_lookup
+    configuration:
+      data_sources:
+        im_prep: *im_prep_V7
+        fcm_tables: *fcm_tables
+      data_sinks:
+        output: *risk_prep_V7
+      file_mode: w
+
+  risk_prep_V6:
+    module:
+      <<: *generic_module
+      python_module: prepare_risk_lookup
+    configuration:
+      data_sources:
+        im_prep: *im_prep_V6
+        fcm_tables: *fcm_tables
+      data_sinks:
+        output: *risk_prep_V6
+      file_mode: w
+
+  process:
+    module:
+      <<: *generic_module
+      python_module: process
+    configuration:
+      data_sources:
+        input: *risk_prep_V7
+        weights: *lt_V7
+      data_sinks:
+        output: *risk_prep_excerpt
+      file_mode: w
+
+  rupture_prep:
+    module:
+      <<: *generic_module
+      python_module: prepare_rupture_lookup
+    configuration:
+      data_sinks:
+        output: *rupture_prep
+      dimensions:
+        magnitude: *magnitude
+        distance_hypocenter: *distance_hypocenter
+        distance_rupture: *distance_rupture
+        azimuth:
+          length: 11
+          units: degrees
+      n_sample: 100
+      file_mode: w
+
+  exposure_prep:
+    module:
+      <<: *generic_module
+      python_module: prepare_exposure
+    configuration:
+      data_sources:
+        exposure_input: *edb
+        zonation: *zonation
+      data_sinks:
+        exposure_grid: *exposure_grid
+        exposure_database: *exposure_database
+      ignore_zones: ["2813", "3411"]
+      grid_spacing: 5000.
+      file_mode: w
+
+  exposure_prep_ds1:
+    module:
+      <<: *generic_module
+      python_module: prepare_exposure_ds1
+    configuration:
+      data_sources:
+        exposure_input: *ds1_edb
+        gmm_coefficients: *ds1_gmm_coefficient
+        fcm_coefficients: *ds1_fcm_coefficient
+        vs30: *ds1_vs30
+      data_sinks:
+        exposure_grid: *exposure_grid_ds1
+        exposure_database: *exposure_database_ds1
+      grid_spacing: 5000.
+      file_mode: w # default: w-
+
+  source_integrator:
+    module:
+      <<: *generic_module
+      python_module: aggregate_source
+    configuration:
+      data_sources:
+        rupture_prep: 
+          <<: *rupture_prep
+          variable: probability_density_azimuth_smoothed
+        forecast: *forecast
+        exposure_grid: *exposure_grid
+      data_sinks:
+        output: *source_distribution
+      file_mode: w
+
+  hazard_integrator:
+    module:
+      <<: *generic_module
+      python_module: integrate_by_zones
+    configuration:
+      data_sources:
+        rates: 
+          <<: *source_distribution
+          variable: seismicity_rate
+        conditional_probabilities: *hazard_prep_V6
+        rate_multiplier:
+          <<: *gmm_tables_V6
+          variable: rate_multiplier
+        exposure_grid: *exposure_grid
+        weights: *lt_V6
+      data_sinks:
+        output: *hazard_curves
+      file_mode: w
+
+  hazard_extractor:
+    module:
+      <<: *generic_module
+      python_module: extract_hazard
+    configuration:
+      data_sources:
+        exceedance_data: 
+          <<: *hazard_curves
+          variable: surface_poe-[lt-mean]
+      data_sinks:
+        output: *hazard_samples
+      return_periods: [475., 2475.]
+      dim: gm_surface
+      coords: SA_g_surface
+      batch_size: 10
+      batch_dim: zone_x_y
+      file_mode: w
+
+  risk_integrator:
+    module:
+      <<: *generic_module
+      python_module: integrate_by_zones
+    configuration:
+      data_sources:
+        rates: 
+          <<: *source_distribution
+          variable: seismicity_rate
+        conditional_probabilities: 
+          <<: *risk_prep_V6
+          variable: LPR
+        exposure_grid: *exposure_grid
+        weights: *lt_V6
+      data_sinks:
+        output: *risk
+      file_mode: w
+
+  risk_integrator_dist:
+    module:
+      <<: *generic_module
+      python_module: integrate_by_nodes
+    configuration:
+      data_sources:
+        rates: 
+          <<: *source_distribution
+          variable: seismicity_rate
+        conditional_probabilities: 
+          <<: *risk_prep_V7
+          variable: LPR
+        rate_multiplier:
+          <<: *gmm_tables_V7
+          variable: rate_multiplier
+        exposure_grid: *exposure_grid
+        weights: *lt_V7
+      data_sinks:
+        output: *risk_distribution
+      fractile: [0.5, 0.9]
+      file_mode: w
+      batch_size: 4
+
+  exposure:
+    module:
+      <<: *generic_module
+      python_module: confront_exposure
+    configuration:
+      data_sources:
+        zone_data: *risk
+        exposure_database: *exposure_database
+      data_sinks:
+        output: *exposure
+      file_mode: w
+
+  integrate_ds1:
+    module:
+      <<: *generic_module
+      python_module: integrate_ds1
+    configuration:
+      data_sources:
+        forecast: *forecast
+        weights: *logic_tree_ssm
+        gmm_coefficients: *ds1_gmm_coefficient
+        fcm_coefficients: *ds1_fcm_coefficient
+        exposure_grid: *exposure_grid_ds1
+        exposure_database: *exposure_database_ds1
+      data_sinks:
+        output: *exposure_ds1
+      file_mode: w
+
+  aggregate_exposure:
+    module:
+      <<: *generic_module
+      python_module: aggregate_exposure
+    configuration:
+      data_sources:
+        conditional_data: 
+          <<: *risk_prep_excerpt
+          variable: structural_poe
+        exposure_grid: 
+          <<: *exposure_grid
+          variable: count
+        rupture_prep:
+          <<: *rupture_prep
+          variable: probability_density_azimuth_smoothed
+          thin:
+            azimuth: 5
+        source_grid: *forecast
+      data_sinks:
+        output: *fast_risk
+      chunk:
+        zone: 1
+      file_mode: w
+
+
+  aggregate_exposure_ds1:
+    module:
+      <<: *generic_module
+      python_module: aggregate_exposure_ds1
+    configuration:
+      data_sources:
+        exposure_grid: 
+          <<: *exposure_grid_ds1
+          variable: count
+        rupture_prep:
+          <<: *rupture_prep
+          variable: probability_density_azimuth_smoothed
+        source_grid: *forecast
+        gmm_coefficients: *ds1_gmm_coefficient
+        fcm_coefficients: *ds1_fcm_coefficient
+      data_sinks:
+        output: *fast_risk_ds1
+      file_mode: w
+
+
+  hazard_visualization:
+    module:
+      <<: *generic_module
+      python_module: visualize.visualize_hazard
+    configuration:
+      data_sources:
+        hazard: *hazard_samples
+        zonation: *zonation
+      data_sinks:
+        visualization_results: *visualization_results
+      grid_crs: EPSG:28992
+
+
+  risk_visualization:
+    module:
+      <<: *generic_module
+      python_module: visualize.visualize_risk
+    configuration:
+      data_sources:
+        risk: *risk
+        zonation: *zonation
+      data_sinks:
+        visualization_results: *visualization_results
+      grid_crs: EPSG:28992
+
+  exposure_visualization:
+    module:
+      <<: *generic_module
+      python_module: visualize.visualize_exposure
+    configuration:
+      data_sources:
+        exposure_ds1: *exposure_ds1
+        exposure_risk: *exposure
+        exposure_database: *exposure_database
+      data_sinks:
+        visualization_results: *visualization_results
+      filter:
+        surface_condition: sc_flag
