@@ -58,24 +58,24 @@ mean risk and therefore do not rely on the full logic tree expansion of the
 preparatory calculations.<br>
 
 Run the preparatory calculations: <br>
-`python parse_input.py hr_config.yml` <br>
-`python gmm_tables.py hr_config.yml` <br>
-`python fcm_tables.py hr_config.yml` <br> 
-`python rupture_prep.py hr_config.yml`<br>
-`python exposure_prep.py hr_config.yml`<br>
-`python hazard_prep.py hr_config.yml`<br>
-`python im_prep.py hr_config.yml`<br>
-`python risk_prep.py hr_config.yml`<br>
+`python parse_input.py config_test.yml` <br>
+`python tabulate_gmm.py config_test.yml` <br>
+`python tabulate_fcm.py config_test.yml` <br> 
+`python prepare_rupture_lookup.py config_test.yml`<br>
+`python prepare_exposure.py config_test.yml`<br>
+`python prepare_hazard_lookup.py config_test.yml`<br>
+`python prepare_im_lookup.py config_test.yml`<br>
+`python prepare_risk_lookup.py config_test.yml`<br>
 
 Run the hazard and risk calculations: <br>
-`python source_integrator.py hr_config.yml`<br>
-`python hazard_integrator.py hr_config.yml`<br>
-`python risk_integrator.py hr_config.yml`<br>
+`python aggregate_source.py config_test.yml`<br>
+`python integrate_by_zones.py config_test.yml`<br>
+`python integrate_by_nodes.py config_test.yml`<br>
 
-An example `hr_config.yml` file is provided in the [demo](/demo) folder. <br>
+An example `config_test.yml` file is provided in the [tests](/tests) folder. <br>
 For more details see the [`CHAIN MANUAL`](https://github.com/TNO/SHRA-Groningen-seismic-source-model/blob/main/CHAIN_MANUAL.md) in the [`SHRA-Groningen-seismic-source-model`](https://github.com/TNO/SHRA-Groningen-seismic-source-model/) repository.
 
 ## License ##
 Licensed under the [EUPL](/LICENSE)
 
-Copyright (C) 2023 TNO
+Copyright (C) 2025 TNO
