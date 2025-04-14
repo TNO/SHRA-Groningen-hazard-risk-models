@@ -1,55 +1,26 @@
 """
 Generate hazard prep: conditional probabilities of exceedance
 """
+
 import sys
 import logging
 import timeit
 import scipy.stats as st
 import numpy as np
 import xarray as xr
-from dask.distributed import progress
 
 from chaintools.chaintools.tools_configuration import preamble
 from chaintools.chaintools import tools_xarray as tx
+from chaintools.chaintools import tools_grid as tg
 
 
 def main(args):
-    module_name = "hazard_prep"
-    config, client = preamble(args, module_name)
-    logging.info(f"starting {module_name}")
+    config = preamble(args)
+    logging.info("starting module %s in file %s", __name__, __file__)
     start = timeit.default_timer()
 
-    # open gmm configuration and tabular data
-    gmm_tables = tx.open("gmm_tables", config)
+    run_core(config)
 
-    # STAGE 1: compute probability of exceedance (poe) conditional on reference
-    # ground motions (tabulated along gm_reference dimension)
-    conditional_poe_srf = get_conditional_exceedance_curves(gmm_tables, config)
-
-    # STAGE 2: marginalize over reference ground motions
-    # (conditional on magnitude/distance), and over logic tree,
-    # to obtain surface poe conditional on magnitude/distance
-    logging.info("calculating mean exceedance curves at surface")
-    poe_mean = get_mean_exceedance_curves(gmm_tables, conditional_poe_srf)
-    storage_task = tx.store(poe_mean, "hazard_prep", config, mode="w-", compute=False)
-    job = client.compute(storage_task)
-    progress(job)
-
-    # full logic tree only if requested
-    if config.get("full_logictree", False):
-        # report intermediate timing
-        stop = timeit.default_timer()
-        total_time = stop - start
-        logging.info(f"intermediate time: {total_time / 60:.2f} mins")
-
-        # marginalize surface ground motions over gm_reference only
-        logging.info("calculating full logic tree exceedance curves at surface")
-        poe = get_full_lt_exceedence_curves(gmm_tables, conditional_poe_srf)
-        storage_task = tx.store(poe, "hazard_prep", config, mode="a", compute=False)
-        job = client.compute(storage_task)
-        progress(job)
-
-    # report timing
     stop = timeit.default_timer()
     total_time = stop - start
     logging.info(f"total time: {total_time / 60:.2f} mins")
@@ -57,72 +28,87 @@ def main(args):
     return
 
 
-def get_full_lt_exceedence_curves(gmm_tables, conditional_poe_srf):
-    # treatment of rate multiplier -- implementation of magnitude-dependent weights
-    # should be used when marginalizing over logic tree
-    rate_multiplier = gmm_tables.get("rate_multiplier", 1.0)
+def run_core(config):
+    # open gmm configuration and tabular data
+    gmm_tables = tx.open("gmm_tables", config)
+    weights = tx.open("weights", config)
+    rate_multiplier = tx.open("rate_multiplier", config)
 
-    poe_srf = xr.dot(
-        gmm_tables["reference_pmf"],
+    # STAGE 0: set up dimensions and coordinates for ground motion, then store
+    output_ds = tx.prepare_ds(config)
+    lnSA_ref = np.log(output_ds["SA_reference"])
+    lnSA_srf = np.log(output_ds["SA_surface"])
+    tx.store(output_ds, "output", config, mode=config.get("file_mode", "w-"))
+
+    # STAGE 1: calculate reference ground motion distributions
+    logging.info("calculating reference exceedence probabilities")
+    reference_poe = calculate_reference_poe(gmm_tables, lnSA_ref)
+    reference_poe = tx.weighted_sum(reference_poe, weights, rate_multiplier)
+    output_ds["reference_poe"] = reference_poe
+    tx.store(output_ds, "output", config)
+
+    # STAGE 2: compute probability of exceedance (poe) conditional on reference
+    # ground motions (tabulated along gm_reference dimension)
+    # delay actual computation until the next stage
+    conditional_surface_poe = calculate_conditional_surface_poe(
+        gmm_tables, lnSA_ref, lnSA_srf, config
+    )
+
+    # STAGE 3: marginalize over reference ground motions
+    # (conditional on magnitude/distance), and over the core dimension
+    # of the provided provided weights -- most probably the logic tree --,
+    # to obtain surface poe, still conditional on magnitude/distance
+    logging.info("calculating surface exceedence probabilities")
+    reference_pmf = tg.bin_diff(reference_poe, "gm_reference", fill_value=0.0).persist()
+    output_ds["surface_poe"] = calculate_surface_poe(
+        reference_pmf, conditional_surface_poe, weights
+    )
+    tx.store(output_ds, "output", config)
+
+
+def calculate_reference_poe(gmm_tables, im_ref):
+    """
+    Calculate exceedence probabilities of all ground motion components at reference level
+    """
+    # shorthands
+    median = gmm_tables["reference_median"]
+    sd = np.sqrt(gmm_tables["reference_variance"])
+
+    # calculate exceedence probabilities
+    reference_poe = xr.apply_ufunc(
+        st.norm.sf,
+        im_ref,
+        median,
+        sd,
+        dask="parallelized",
+        output_dtypes=[float],
+    )
+
+    return reference_poe
+
+
+def calculate_surface_poe(reference_pmf, conditional_poe_srf, weights):
+    relevant_weights, marginalize_dims = tx.prepare_weights(
+        weights, reference_pmf, conditional_poe_srf
+    )
+    marginalize_dims = marginalize_dims | {"gm_reference"}
+
+    surface_poe = xr.dot(
+        reference_pmf,
         conditional_poe_srf,
-        dims=["gm_reference"],
+        *relevant_weights.values(),
+        dim=marginalize_dims,
         optimize=True,
     )
 
-    poe = xr.Dataset(
-        {
-            "surface_poe": poe_srf,
-            "reference_poe": gmm_tables["reference_poe"],
-            "rate_multiplier": rate_multiplier,
-        }
-    )
-
-    return poe
+    return surface_poe
 
 
-def get_mean_exceedance_curves(gmm_tables, conditional_poe_srf):
-    # get logic tree
-    logictree, logictree_af, logictree_af_dims = get_logic_tree(gmm_tables)
-
-    # marginalize conditional motions over logic tree to get the mean
-    conditional_poe_srf_mean = xr.dot(
-        conditional_poe_srf,
-        *logictree_af.values(),
-        dims=logictree_af_dims,
-        optimize=True,
-    )
-
-    # marginalize conditional mean surface motions over mean reference motions
-    poe_srf_mean = xr.dot(
-        gmm_tables["reference_pmf_mean"],
-        conditional_poe_srf_mean,
-        dims=["gm_reference"],
-    )
-
-    # collect and store
-    poe_mean = xr.Dataset(
-        {
-            "surface_poe_mean": poe_srf_mean,
-            "reference_poe_mean": gmm_tables["reference_poe"],
-        }
-    ).merge(logictree)
-
-    return poe_mean
-
-
-def get_conditional_exceedance_curves(gmm_tables, config):
+def calculate_conditional_surface_poe(gmm_tables, lnSA_ref, lnSA_srf, config):
     """
     Calculate conditional probability of exceedance at surface
     given reference ground motions (tabulated along gm_reference dimension)
     """
-    # treatment of site-to-site (s2s) variability
-    # defaults can be overridden in config
-    gmm_version = gmm_tables["gmm_version"]
-    if gmm_version in ["GMM-V5", "GMM-V6"]:
-        s2s_mode_default = "aleatory"
-    else:
-        s2s_mode_default = "epistemic"
-    s2s_mode = config.get("s2s_mode", s2s_mode_default)
 
     # treatment of wierden -- imported from V7, allowed in other models
     # note that this is actually a log of a factor
@@ -132,21 +118,25 @@ def get_conditional_exceedance_curves(gmm_tables, config):
     lnAF = gmm_tables["af_median"]
     lnAF_std = np.sqrt(gmm_tables["af_variance"])
     s2s_epsilons = gmm_tables["s2s_epsilons"]
-    lnSA_ref = np.log(gmm_tables["SA_reference"])
-    lnSA_srf = np.log(gmm_tables["SA_surface"])
-    surface_nodes = lnSA_srf
 
     # median motions at surface level
     median = lnSA_ref + lnAF + wierde_factor
 
+    # next steps depend on the treatment of s2s variability, either
+    # as aleatory or epistemic
+    s2s_mode = get_s2s_mode(gmm_tables, config)
     if s2s_mode == "aleatory":
         # AF is modeled as a lognormal distribution
         # first interpolated linearly to the center of the gm_reference bin (between two nodes)
-        mu = bin_interpolate(median, "gm_reference")
-        sigma = bin_interpolate(lnAF_std, "gm_reference")
+        mu = tg.bin_average(median, "gm_reference")
+        sigma = tg.bin_average(lnAF_std, "gm_reference")
         # then, conditional poe is computed using the survival function
         conditional_poe_srf = xr.apply_ufunc(
-            st.norm.sf, surface_nodes, mu, sigma, dask="parallelized"
+            st.norm.sf,
+            lnSA_srf,
+            mu,
+            sigma,
+            dask="parallelized",
         ).fillna(0.0)
     elif s2s_mode == "epistemic":
         # AF is modeled as a 3pt discrete distribution (3pt on 3 s2s branches)
@@ -154,13 +144,13 @@ def get_conditional_exceedance_curves(gmm_tables, config):
         realization = median + delta_lnAF
         # construct a linear off-ramp function corresponding to the gm_reference bin
         # first, determine the range in gm_surface occupied by the gm_reference bin
-        delta = bin_diff(realization, "gm_reference").fillna(0.0).clip(1e-10, None)
+        delta = (
+            tg.bin_diff(-1 * realization, "gm_reference").fillna(0.0).clip(1e-10, None)
+        )
         # then, construct a linear function on that range and clip it,
         # thus forming the linear off-ramp
-        mu = bin_interpolate(realization, "gm_reference")
-        conditional_poe_srf = (
-            (0.5 - (surface_nodes - mu) / delta).fillna(0.0).clip(0.0, 1.0)
-        )
+        mu = tg.bin_average(realization, "gm_reference")
+        conditional_poe_srf = (0.5 - (lnSA_srf - mu) / delta).fillna(0.0).clip(0.0, 1.0)
         # this is more or less analogous to aleatory case,
         # where we have a sigmoid function in place (sf of normal distribution)
     else:
@@ -169,32 +159,14 @@ def get_conditional_exceedance_curves(gmm_tables, config):
     return conditional_poe_srf
 
 
-def get_logic_tree(gmm_tables):
-    logictree = gmm_tables[[v for v in gmm_tables if "logic_tree:" in v]]
-    logictree_af_dims = ["branch_s2s"]
-    logictree_ref = logictree.drop_dims(logictree_af_dims)
-    logictree_ref_dims = [d for d in logictree_ref.dims if d.startswith("branch")]
-    logictree_af = logictree.drop_dims(logictree_ref_dims)
-    return logictree, logictree_af, logictree_af_dims
-
-
-def bin_diff(value, dim, fill_value=None):
-    if fill_value is None:
-        shift_value = value.shift({dim: -1})
+def get_s2s_mode(gmm_tables, config):
+    gmm_version = gmm_tables["gmm_version"]
+    if gmm_version in ["GMM-V5", "GMM-V6"]:
+        s2s_mode_default = "aleatory"
     else:
-        shift_value = value.shift({dim: -1}, fill_value=fill_value)
+        s2s_mode_default = "epistemic"
 
-    return shift_value - value
-
-
-def bin_interpolate(value, dim, fill_value=None):
-    if fill_value is None:
-        shift_value = value.shift({dim: -1})
-    else:
-        shift_value = value.shift({dim: -1}, fill_value=fill_value)
-
-    value = 0.5 * (value + shift_value)
-    return value
+    return config.get("s2s_mode", s2s_mode_default)
 
 
 if __name__ == "__main__":

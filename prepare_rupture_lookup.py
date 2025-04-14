@@ -1,44 +1,67 @@
 """
 Generate rupture_prep: distribution of rupture distances as a function of epicentral distance, magnitude, and
-azimuth. 
+azimuth.
 """
+
 import sys
 import logging
 import timeit
 import numpy as np
 import xarray as xr
 import dask.array as da
-from dask.distributed import progress
 from flox.xarray import xarray_reduce
 from scipy.ndimage import gaussian_filter1d
 
-from models import rupture as rup
+from hr_models import rupture as rup
 from chaintools.chaintools.tools_configuration import preamble
 from chaintools.chaintools.tools_xarray import prepare_ds, store
 
 
+def assign_defaults(config):
+    config.setdefault("file_mode", "w-")
+    config.setdefault("rng_seed", 42)
+    config.setdefault("azimuth_sd", 30.0)
+    config.setdefault("rupture_length_logsd", 0.190)
+    config.setdefault("rupture_depth", 3.0)
+    config.setdefault("n_sample", 1_000_000)
+    config.setdefault("n_workers", 8)
+    config.setdefault(
+        "independent_dimensions", ["magnitude", "distance_hypocenter", "azimuth"]
+    )
+    config.setdefault("chunk", {})
+    config["rupture_model"] = rup.default_parameters | config.get("rupture_model", {})
+    config["dimensions"]["azimuth"]["interval"] = [0.0, 90.0]
+
+    return
+
+
 def main(args):
-    module_name = "rupture_prep"
-    config, client = preamble(args, module_name)
-    logging.info(f"starting {module_name}")
+    config = preamble(args)
+    logging.info("starting module %s in file %s", __name__, __file__)
     assign_defaults(config)
     start = timeit.default_timer()
 
+    run_core(config)
+
+    stop = timeit.default_timer()
+    total_time = stop - start
+    logging.info(f"total time: {total_time / 60:.2f} mins")
+
+    return
+
+
+def run_core(config):
     # prepare data dimensions and prepare random samples
     ds = prepare_ds(config)
     ds = extend_ds(ds, config)
     epsilon = get_random_samples(ds, config)
 
     # compute rupture distance
+    logging.info("computing rupture distance distribution")
     rupture_distance = get_rupture_distance(ds, epsilon, config)
     rupture_distance_distribution = get_rupture_distance_distribution(
         ds, rupture_distance
-    )
-
-    logging.info("computing rupture distance distribution")
-    job = client.compute(rupture_distance_distribution)
-    progress(job)
-    rupture_distance_distribution = job.result()
+    ).compute()
 
     logging.info("marginalize azimuth distribution")
     smoothed_rupture_distance_distribution = smooth_azimuth(
@@ -52,15 +75,7 @@ def main(args):
             "probability_density_azimuth_smoothed": smoothed_rupture_distance_distribution,
         }
     )
-    storage_task = store(ds, module_name, config, mode="w-", compute=False)
-    job = client.compute(storage_task)
-    progress(job)
-
-    stop = timeit.default_timer()
-    total_time = stop - start
-    logging.info(f"total time: {total_time / 60:.2f} mins")
-
-    return
+    store(ds, "output", config, mode=config["file_mode"])
 
 
 def extend_ds(ds, config):
@@ -105,6 +120,8 @@ def get_rupture_distance_distribution(ds, distance_rupture):
             func="sum",
             dim=["__span__", "__sample__"],
             expected_groups=label_range,
+            engine="flox",
+            method="map-reduce",
         )
         .fillna(0.0)
         .assign_coords(ds.coords)
@@ -132,7 +149,7 @@ def get_rupture_distance(ds, epsilon, config):
         lambda m: rup.rupture_length(m, config["rupture_model"]), ds["magnitude"]
     )
     mean_log_length = np.log(rupture_length)
-    sigma_log_length = np.log(10) * config["rupture_length_sd"]  #! note sd in log10
+    sigma_log_length = np.log(10) * config["rupture_length_logsd"]
     rupture_length = np.exp(
         (mean_log_length + sigma_log_length * epsilon["standard_normal"])
     )
@@ -153,19 +170,19 @@ def get_rupture_distance(ds, epsilon, config):
 def get_random_samples(ds, config, sample_dim=None):
     # batch dimensions - all elements of these dimensions
     # recieve their own random sample
-    batch_dimensions = config["batch_dimensions"]
-    coords = ds[batch_dimensions].coords
-    sizes = tuple(coords.dims.values())
+    independent_dimensions = config["independent_dimensions"]
+    coords = ds[independent_dimensions].coords
+    sizes = tuple(coords.sizes.values())
 
     # add sample dimension
     if sample_dim is None:
         sample_dim = "__sample__"
-    dimensions = batch_dimensions + [sample_dim]
+    dimensions = independent_dimensions + [sample_dim]
     n_sample = config["n_sample"]
     sizes = sizes + (n_sample,)
 
     # determine chunking - straight from config; should be the same as ds
-    chunk_spec = config["chunks"]
+    chunk_spec = config["chunk"]
     chunk_spec[sample_dim] = -1
     chunk_sizes = tuple(chunk_spec.get(dim, "auto") for dim in dimensions)
 
@@ -186,22 +203,6 @@ def get_random_samples(ds, config, sample_dim=None):
     )
 
     return ds_epsilon
-
-
-def assign_defaults(config):
-    config["rupture_model"] = rup.default_parameters | config.get("rupture_model", {})
-    config["azimuth_sd"] = config.get("azimuth_sd", 30.0)
-    config["rupture_length_sd"] = config.get("rupture_length_sd", 0.190)
-    config["rupture_depth"] = config.get("rupture_depth", 3.0)
-    config["n_sample"] = config.get("n_sample", 1_000_000)
-    config["n_workers"] = config.get("n_workers", 8)
-    config["batch_dimensions"] = config.get(
-        "batch_dimensions", ["magnitude", "distance_hypocenter", "azimuth"]
-    )
-    config["chunks"] = config.get("chunks", {})
-    config["dimensions"]["azimuth"]["interval"] = [0.0, 90.0]
-
-    return
 
 
 if __name__ == "__main__":

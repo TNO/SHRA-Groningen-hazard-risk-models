@@ -2,24 +2,33 @@
 Generate tables of fragity and consequence model parameters conditional
 on surface ground motions
 """
+
 import sys
 import logging
 import timeit
 import scipy.stats as st
 import numpy as np
 import xarray as xr
-from dask.distributed import progress
 
 from chaintools.chaintools.tools_configuration import preamble
 from chaintools.chaintools import tools_xarray as tx
 
 
 def main(args):
-    module_name = "fcm_tables"
-    config, client = preamble(args, module_name)
-    logging.info(f"starting {module_name}")
+    config = preamble(args)
+    logging.info("starting module %s in file %s", __name__, __file__)
     start = timeit.default_timer()
 
+    run_core(config)
+
+    stop = timeit.default_timer()
+    total_time = stop - start
+    logging.info(f"total time: {total_time / 60:.2f} mins")
+
+    return
+
+
+def run_core(config):
     # set up coordinates dataset and prepare for DASK
     coords_ds = tx.prepare_ds(config)
 
@@ -30,18 +39,13 @@ def main(args):
     logging.info("generating tables")
     samples = fcm_tables(fcm_config, coords_ds)
 
-    # set up output logistics
-    storage_task = tx.store(samples, module_name, config, compute=False)
+    # store
+    tx.store(samples, "tables", config)
 
-    # execute
-    job = client.compute(storage_task)
-    progress(job)
-
-    stop = timeit.default_timer()
-    total_time = stop - start
-    logging.info(f"total time: {total_time / 60:.2f} mins")
-
-    return
+    # export logic tree weights
+    logging.info("exporting logic tree weights")
+    logic_tree = fcm_config[[v for v in fcm_config if v.startswith("w_")]]
+    tx.store(logic_tree, "logic_tree", config)
 
 
 def fcm_tables(fcm_config, sample_ds):
@@ -84,10 +88,6 @@ def fcm_tables(fcm_config, sample_ds):
         }
     ).fillna(0.0)
 
-    # copy logic tree weights
-    logictree = fcm_config[[v for v in fcm_config if "logic_tree:" in v]]
-    table_ds = table_ds.merge(logictree)
-
     return table_ds
 
 
@@ -109,7 +109,7 @@ def fcm_structural_pod(poe, fcm_config):
     pod_cond_poe = fcm_structural_pod_cond_poe(fcm_config)
 
     # marginalize over limit states
-    pod = xr.dot(pod_cond_poe, poe, dims=["limit_state"])
+    pod = xr.dot(pod_cond_poe, poe, dim=["limit_state"])
 
     return pod
 

@@ -3,70 +3,30 @@ import logging
 import timeit
 import numpy as np
 import xarray as xr
-from dask.distributed import progress
+from tqdm import tqdm
 
-from chaintools.chaintools.tools_configuration import preamble
+from chaintools.chaintools.tools_configuration import preamble, batched
 from chaintools.chaintools import tools_xarray as tx
 
 
+def assign_defaults(config):
+    config.setdefault("rupture_azimuth", -30.0)
+    config.setdefault("source_spatial_dimensions", ["x", "y"])
+    config.setdefault("source_spatial_coordinates", ["x", "y"])
+    config.setdefault("file_mode", "w-")
+    config.setdefault("output_id", "seismicity_rate")
+    config.setdefault("batch_size", 10)
+
+    return
+
+
 def main(args):
-    module_name = "source_integrator"
-    config, client = preamble(args, module_name)
-    logging.info(f"starting {module_name}")
+    config = preamble(args)
+    logging.info("starting module %s in file %s", __name__, __file__)
     assign_defaults(config)
     start = timeit.default_timer()
 
-    # open data sources
-    rupture_prep = tx.open("rupture_prep", config, chunking_allowed=False)
-    forecast = tx.open("forecast", config, chunking_allowed=False)
-    exposure_grid = tx.open("exposure_grid", config, chunking_allowed=False)
-
-    # preprocessing
-    rp_mags = rupture_prep["magnitude"]
-    rp = rupture_prep["probability_density_azimuth_smoothed"]
-    forecast = preprocess_ssm(forecast, rp_mags, config)
-    sr = forecast["seismicity_rate"]
-    eg = exposure_grid.stack(x_y=("x", "y"))
-    eg = eg["contributing"].where(eg["contributing"], drop=True)
-    logictree = forecast[[v for v in forecast if "logic_tree" in v]]
-
-    # compute azimuth and distance
-    azi, dst = get_azimuth_distance(rupture_prep, sr, eg, config["rupture_azimuth"])
-
-    # chunk
-    ds = xr.Dataset({"d": dst, "a": azi, "sr": sr, "rp": rp})
-    chunks = {d: config["chunks"].get(d, "auto") for d in ds.dims}
-    ds = ds.chunk(chunks).unify_chunks()
-
-    # main calculations
-    # interpolate rupture prep to get rupture distance distribution conditional on
-    # the specific azimuth and hypocentral distance of subsurface nodes
-    rp_int = (
-        ds["rp"]
-        .interp(azimuth=ds["a"], distance_hypocenter=ds["d"], method="linear")
-        .fillna(0.0)
-    )
-
-    # inner product with source distribution at subsurface nodes
-    sr_mean = xr.dot(ds["sr"], *logictree.values(), optimize=True)
-    seismicity_mean = xr.dot(sr_mean, rp_int, dims="loc_s").reset_index("x_y")
-
-    out_ds = xr.Dataset({"seismicity_rate_mean": seismicity_mean})
-    out_ds = out_ds.merge(logictree, combine_attrs="no_conflicts")
-    out_ds.assign_attrs(**config)
-
-    if config.get("full_logictree", False):
-        sr = xr.dot(ds["sr"], rp_int, dims="loc_s").reset_index("x_y")
-        out_ds["seismicity_rate"] = sr
-
-    # finally, store the output
-    storage_task = tx.store(
-        out_ds, "source_distribution", config, mode="w-", compute=False
-    )
-
-    # launch and monitor
-    job = client.compute(storage_task)
-    progress(job)
+    run_core(config)
 
     stop = timeit.default_timer()
     total_time = stop - start
@@ -75,10 +35,90 @@ def main(args):
     return
 
 
-def get_azimuth_distance(rupture_prep, fc, eg, azimuth):
+def run_core(config):
+    # open data sources
+    rupture_prep = tx.open("rupture_prep", config)
+    forecast = tx.open("forecast", config)
+    exposure_grid = tx.open("exposure_grid", config)
+    weights = tx.open("weights", config)
+
+    # preprocessing
+    forecast = preprocess_forecast(forecast, rupture_prep["magnitude"], config)
+
+    # preprocess grid - find surface nodes where we need data
+    exposure_grid.load()
+    eg_x_y = get_exposure_x_y(exposure_grid)
+
+    # preprocess weights -select relevant ones and determine marginalizable dimensions
+    weights, marginalize_dims = tx.prepare_weights(weights, forecast, rupture_prep)
+    marginalize_dims = marginalize_dims | {"loc_s"}
+
+    # determine relative geometry of surface (eg_x_y) and subsurface (forecast)
+    # points
+    azi, dst = get_azimuth_distance(
+        forecast,
+        eg_x_y,
+        config["rupture_azimuth"],
+        rupture_prep["rupture_depth"],
+    )
+
+    # loop over exposure grid points, calculate seismicity rate and store
+    storage_kwargs = {"mode": config["file_mode"]}
+    n = len(eg_x_y)
+    batch_size = config["batch_size"]
+    n_batch = n // batch_size + 1
+    b_iterator = tqdm(batched(range(n), batch_size), desc="node batches", total=n_batch)
+    for i_range in b_iterator:
+        seismicity = calculate_radial_seismicity(
+            rupture_prep,
+            forecast,
+            dst.isel({"x_y": [*i_range]}),
+            azi.isel({"x_y": [*i_range]}),
+            weights,
+            marginalize_dims,
+        )
+        seismicity.name = config["output_id"]
+
+        # store the result
+        tx.store(seismicity, "output", config, **storage_kwargs)
+
+        # prepare for next iteration
+        storage_kwargs["append_dim"] = "x_y"
+        storage_kwargs["mode"] = "a"
+
+
+def calculate_radial_seismicity(
+    rupture_prep, forecast, dst, azi, weights, marginalize_dims
+):
+    rupture_prep_interpolated = rupture_prep.interp(
+        azimuth=azi,
+        distance_hypocenter=dst,
+        method="linear",
+    ).fillna(0.0)
+
+    # inner product with source distribution at subsurface nodes
+    radial_seismicity = xr.dot(
+        forecast,
+        rupture_prep_interpolated,
+        *weights.values(),
+        dim=marginalize_dims,
+        optimize=True,
+    )
+
+    return radial_seismicity
+
+
+def get_exposure_x_y(exposure_grid):
+    eg = exposure_grid.stack({"x_y": ("x", "y")})
+    eg_x_y = eg["x_y"].where(eg["contributing"], drop=True)
+
+    return eg_x_y
+
+
+def get_azimuth_distance(fc, eg, azimuth, depth):
     dx = (fc["x"] - eg["x"]) / 1000.0
     dy = (fc["y"] - eg["y"]) / 1000.0
-    dz = rupture_prep.rupture_depth
+    dz = depth
     azi = relative_azimuth(dx, dy, azimuth)
     distance = np.sqrt(dx**2 + dy**2 + dz**2)
 
@@ -96,52 +136,28 @@ def relative_azimuth(dx, dy, azimuth):
     return angles_reduced
 
 
-def assign_defaults(config):
-    config["rupture_azimuth"] = config.get("rupture_azimuth", -30.0)
-    config["chunks"] = config.get("chunks", {}) | {
-        "loc_s": -1,
-        "x_y": 1,
-        "magnitude": 10,
-        "distance_hypocenter": -1,
-        "distance_rupture": -1,
-        "azimuth": -1,
-    }
-    config["source_spatial_dimensions"] = config.get(
-        "source_spatial_dimensions", ["x", "y"]
-    )
-    config["source_spatial_coordinates"] = config.get(
-        "source_spatial_coordinates", ["x", "y"]
-    )
-    config["full_logictree"] = config.get("full_logictree", False)
-    return
-
-
-def preprocess_ssm(seismicity, target_mags, config):
-    # NOTE that this is quite ad-hoc, and should be more smoothly integrated
-    sdim = config["source_spatial_dimensions"]
-
-    seismicity = seismicity.rename({"mmax": "branch_mmax", "magnitude": "m_tmp"})
-
+def preprocess_forecast(seismicity, target_mags, config):
+    # input seismicity are magnitude survival count per spatial unit
+    # (total count * survival probability)
+    # we need magnitude bin count per spatial unit
+    # (total count * magnitude probability mass distribution)
+    # therefore: we will interpolate the survival rates at bin edges
+    # then subtract to obtain the counts per bin
     dm = target_mags[1] - target_mags[0]
-    count_lower = seismicity.interp(
-        m_tmp=target_mags - 0.5 * dm, method="linear"
-    ).fillna(0.0)
-    count_upper = seismicity.interp(
-        m_tmp=target_mags + 0.5 * dm, method="linear"
-    ).fillna(0.0)
+    mmin = seismicity["magnitude"][0]
+    m_lower = (target_mags - 0.5 * dm).clip(min=mmin)
+    m_upper = (target_mags + 0.5 * dm).clip(min=mmin)
+    count_lower = seismicity.interp(magnitude=m_lower, method="linear").fillna(0.0)
+    count_upper = seismicity.interp(magnitude=m_upper, method="linear").fillna(0.0)
     seismicity_pmf = count_lower - count_upper
 
-    seismicity_ds = xr.Dataset({"seismicity_rate": seismicity_pmf})
-    seismicity_ds["logic_tree:branch_mmax"] = xr.DataArray(
-        [0.27, 0.405, 0.1875, 0.1075, 0.025, 0.005], dims="branch_mmax"
-    )
-
+    sdim = config["source_spatial_dimensions"]
     if isinstance(sdim, str):
-        seismicity_ds = seismicity_ds.rename({sdim: "loc_s"})
+        seismicity_pmf = seismicity_pmf.rename({sdim: "loc_s"})
     else:
-        seismicity_ds = seismicity_ds.stack(loc_s=sdim).reset_index("loc_s")
+        seismicity_pmf = seismicity_pmf.stack(loc_s=sdim).reset_index("loc_s")
 
-    return seismicity_ds
+    return seismicity_pmf
 
 
 if __name__ == "__main__":

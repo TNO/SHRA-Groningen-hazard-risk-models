@@ -5,25 +5,33 @@ Generate tables of ground motion distibution parameters conditional
 on ranges for distances, magnitudes, as specified in the configuration file
 provided as a first argument on the command line
 """
+
 import sys
 import logging
 import timeit
-import scipy.stats as st
 import numpy as np
 import xarray as xr
-from dask.distributed import progress
 
-from models import gmm_V5V6, gmm_V7
+from hr_models import gmm_V5V6, gmm_V7
 from chaintools.chaintools.tools_configuration import preamble
 from chaintools.chaintools import tools_xarray as tx
 
 
 def main(args):
-    module_name = "gmm_tables"
-    config, client = preamble(args, module_name)
-    logging.info(f"starting {module_name}")
+    config = preamble(args)
+    logging.info("starting module %s in file %s", __name__, __file__)
     start = timeit.default_timer()
 
+    run_core(config)
+
+    stop = timeit.default_timer()
+    total_time = stop - start
+    logging.info(f"total time: {total_time / 60:.2f} mins")
+
+    return
+
+
+def run_core(config):
     # set up coordinates dataset and prepare for DASK
     table_ds = tx.prepare_ds(config)
 
@@ -31,33 +39,16 @@ def main(args):
     gmm_config = tx.open("gmm_config", config)
 
     # select only spectral periods - no PGV or duration beyond this point
-    gmm_config = gmm_config.sel(IM=gmm_config["T"].compute().notnull())
+    im_selection = gmm_config["T"].compute().notnull()
+    gmm_config = gmm_config.sel(IM=im_selection)
 
     logging.info("calculating basic tables")
     table_ds = gmm_tables(gmm_config, table_ds)
-    storage_task = tx.store(table_ds, module_name, config, mode="w-", compute=False)
-    job = client.compute(storage_task)
-    progress(job)
+    tx.store(table_ds, "tables", config, mode=config.get("file_mode", "w-"))
 
-    logging.info("calculating reference exceedence probabilities")
-    table_ds = tx.chunk(table_ds, config["chunks"])
-    table_ds = calculate_reference_poe(table_ds)
-    storage_task = tx.store(table_ds, module_name, config, mode="a", compute=False)
-    job = client.compute(storage_task)
-    progress(job)
-
-    logging.info("calculating reference probabily densities")
-    table_ds = tx.chunk(table_ds, config["chunks"])
-    table_ds = calculate_reference_pmf(table_ds)
-    storage_task = tx.store(table_ds, module_name, config, mode="a", compute=False)
-    job = client.compute(storage_task)
-    progress(job)
-
-    stop = timeit.default_timer()
-    total_time = stop - start
-    logging.info(f"total time: {total_time / 60:.2f} mins")
-
-    return
+    logging.info("exporting logic tree weights")
+    logic_tree = gmm_config[[v for v in gmm_config if v.startswith("w_")]]
+    tx.store(logic_tree, "logic_tree", config, mode=config.get("file_mode", "w-"))
 
 
 def gmm_tables(gmm_config, table_ds):
@@ -88,7 +79,7 @@ def gmm_tables(gmm_config, table_ds):
     phiss = gmm_config["phiss"]
 
     # perform calculations
-    # apply_ufunc takes case of mainaining xarray metadata
+    # apply_ufunc takes care of maintaining xarray metadata
     table_ds["reference_median"] = xr.apply_ufunc(
         package.reference_median,
         r,
@@ -120,6 +111,13 @@ def gmm_tables(gmm_config, table_ds):
         dask="parallelized",
         output_dtypes=[float],
     )
+
+    table_ds["reference_variance"] = xr.Dataset(
+        {
+            "arbitrary_component": table_ds["reference_ac_variance"],
+            "geometric_mean": table_ds["reference_gm_variance"],
+        }
+    ).to_array(dim="component")
 
     table_ds["surface_median"] = xr.apply_ufunc(
         package.surface_median,
@@ -182,33 +180,24 @@ def gmm_tables(gmm_config, table_ds):
         output_dtypes=[float],
     )
 
-    table_ds["af_max"] = xr.apply_ufunc(
-        package.af_max,
-        af_pars,
-        kwargs={"par_id": af_par_ids.values},
-        input_core_dims=[["parameter_af"]],
-        exclude_dims=set(("parameter_af",)),
-        dask="parallelized",
-        output_dtypes=[float],
-    )
-
     if gmm_version in ["GMM-V7"]:
-        table_ds["branch_median_weights"] = xr.apply_ufunc(
-            package.branch_median_weights,
+        median_weights = xr.apply_ufunc(
+            package.median_weights,
             m,
-            output_core_dims=[["branch_median"]],
+            output_core_dims=[["b_median"]],
             dask="parallelized",
             output_dtypes=[float],
         ).assign_coords(
-            {"branch_median": ["Lower", "CentralLower", "CentralUpper", "Upper"]}
-        )
+            {"b_median": ["Lower", "CentralLower", "CentralUpper", "Upper"]}
+        )  # assign coords to ensure proper alignment
 
         # following serves as a multiplier on the event rates, to account for
         # the fact that the branch median weights are not constant across
         # the magnitude range
-        table_ds["rate_multiplier"] = (
-            table_ds["branch_median_weights"] / gmm_config["logic_tree:branch_median"]
-        )
+        rate_multiplier = median_weights / gmm_config["w_median"]
+    else:
+        rate_multiplier = xr.DataArray(1)  # trivial multiplier for GMM-V5 and GMM-V6
+    table_ds["rate_multiplier"] = rate_multiplier
 
     # V7 elements that have been adopted in all previous versions
     table_ds["s2s_epsilons"] = gmm_config["s2s_epsilons"]
@@ -217,73 +206,9 @@ def gmm_tables(gmm_config, table_ds):
     )
     table_ds["wierde_factor"] = gmm_config["wierde_factor"]
 
-    # copy logic tree weights
-    logictree = gmm_config[[v for v in gmm_config if "logic_tree:" in v]]
-    table_ds = table_ds.merge(logictree)
-
     # restore attributes
     table_ds["distance_rupture"].attrs = r_attrs
     table_ds["magnitude"].attrs = m_attrs
-
-    return table_ds
-
-
-def calculate_reference_poe(table_ds):
-    """
-    Calculate exceedence probabilities of all ground motion components at reference level
-    """
-
-    # two shorthands
-    lnsa = np.log(table_ds["SA_reference"])
-    var = xr.concat(
-        [
-            table_ds["reference_ac_variance"].expand_dims({"component": ["arbitrary"]}),
-            table_ds["reference_gm_variance"].expand_dims(
-                {"component": ["geometric_mean"]}
-            ),
-        ],
-        dim="component",
-    )
-
-    # calculate exceedence probabilities
-    table_ds["reference_poe"] = xr.apply_ufunc(
-        st.norm.sf,
-        lnsa,
-        table_ds["reference_median"],
-        np.sqrt(var),
-        dask="parallelized",
-        output_dtypes=[float],
-    )
-
-    # copy logic tree weights
-    logictree = table_ds[[v for v in table_ds if "logic_tree:" in v]]
-    table_ds = table_ds.merge(logictree)
-    logictree_ref = logictree.drop_dims("branch_s2s")
-    logictree_ref_dims = [d for d in logictree_ref.dims if d.startswith("branch")]
-
-    rate_multiplier = table_ds.get("rate_multiplier", 1.0)
-    table_ds["reference_poe_mean"] = xr.dot(
-        rate_multiplier * table_ds["reference_poe"],
-        *logictree_ref.values(),
-        dims=logictree_ref_dims,
-        optimize=True,
-    )
-
-    return table_ds
-
-
-def calculate_reference_pmf(table_ds):
-    """
-    Calculate probability mass functions of all ground motion components at reference level
-    """
-
-    table_ds["reference_pmf"] = table_ds["reference_poe"] - table_ds[
-        "reference_poe"
-    ].shift({"gm_reference": -1}, fill_value=0.0)
-
-    table_ds["reference_pmf_mean"] = table_ds["reference_poe_mean"] - table_ds[
-        "reference_poe_mean"
-    ].shift({"gm_reference": -1}, fill_value=0.0)
 
     return table_ds
 
