@@ -289,8 +289,8 @@ def af_median(R, M, lnY, pars, par_id=None):
     equations 9.12, 9.13 and 9.14 in [Bommer et al 2021]
 
     inputs
-    R, M, SA - aligned arrays of distances, magnitudes, spectral
-               accelerations
+    R, M, lnY - aligned arrays of distances, magnitudes, spectral
+               accelerations (cm/s2)
     pars     - site amplification coeffs
     """
     # organize parameter views into dictionary
@@ -312,16 +312,6 @@ def af_median(R, M, lnY, pars, par_id=None):
     lnAFclipped = np.clip(lnAF, np.log(Afmin), np.log(Afmax))
 
     return lnAFclipped
-
-
-def af_max(pars, par_id=None):
-    # organize parameter views into dictionary
-    c = gen_dict_like(pars, par_id)
-
-    # local symbols just for code readability
-    Afmax = c["AFmax"]
-
-    return np.log(Afmax)
 
 
 def af_median_linear(R, M, pars, par_id=None):
@@ -370,7 +360,8 @@ def af_median_nonlinear(lnY, pars, par_id=None):
     equation 9.12 in [Bommer et al 2021]
 
     inputs
-    lnY      - N-dim bc-aligned array of spectral acceleration values
+    lnY      - N-dim bc-aligned array of spectral acceleration values in units
+                of cm/s2
     pars     - (N+1)-dim bc-aligned or N-dim structured array of site
                amplification model coefficients
     par_id   - 1-D array of model coefficient identifiers, or None
@@ -381,14 +372,14 @@ def af_median_nonlinear(lnY, pars, par_id=None):
 
     # local symbols just for code readability
     f2, f3 = c["f2"], c["f3"]
-    Afscale = c["AFscale"]
+    AFscale = c["AFscale"]
 
     # for spectral accelerations from cm/s2 to g just
     # to determine the AF - does not affect the unit of SA outside of this scope
-    Y = np.exp(lnY) / Afscale
+    Y_g = np.exp(lnY) / AFscale
 
     # (9.12)
-    lnAFnonlin = f2 * np.log((Y + f3) / f3)
+    lnAFnonlin = f2 * np.log((Y_g + f3) / f3)
 
     return lnAFnonlin
 
@@ -407,20 +398,24 @@ def af_variance(lnY, pars, par_id=None):
     equations 9.15 in [Bommer et al 2021]
 
     inputs
-    lnSA   - ln of spectral acceleration (in units of g)
+    lnY    - ln of spectral acceleration (in units of cm/s2)
     pars   - site amplification coeffs for specific zone and spectral
-             acceleration, coming from afcoeffs[zone][sakey]
-             see also doc of this module and of PoE_calc.py
+             acceleration
     """
     # organize parameter views into dictionary
     c = gen_dict_like(pars, par_id)
 
     # local symbols just for code readability
     s1, s2, xl, xh = c["s1"], c["s2"], c["xl"], c["xh"]
+    AFscale = c["AFscale"]
+
+    # for spectral accelerations from cm/s2 to g just
+    # to determine the AF - does not affect the unit of SA outside of this scope
+    lnY_g = lnY - np.log(AFscale)
 
     # (9.15)
     smin, smax = np.minimum(s1, s2), np.maximum(s1, s2)
-    phi_s2s = np.clip(s1 + (s2 - s1) * (lnY - np.log(xl)) / np.log(xh / xl), smin, smax)
+    phi_s2s = np.clip(s1 + (s2 - s1) * (lnY_g - np.log(xl)) / np.log(xh / xl), smin, smax)
 
     # from standard deviation to variance
     var_s2s = phi_s2s**2
@@ -429,7 +424,7 @@ def af_variance(lnY, pars, par_id=None):
 
 
 # LOGIC TREE
-def branch_median_weights(M):
+def median_weights(M):
     """return the magnitude-dependent logic tree weights according to
     equation 9.8 in [Bommer et al. 2021]
     the equation has been modified/corrected a bit by clipping at the 3.6 and 5.0
@@ -437,7 +432,6 @@ def branch_median_weights(M):
     """
 
     Mclip = np.clip(M, 3.6, 5.0)[..., np.newaxis]
-    # Mclip = Mclip.reshape(M.shape + (1,))
 
     # Table 9.1 [Lower, CentralLower, CentralUpper, Upper]
     wL = np.array([0.2, 0.3, 0.3, 0.2])
@@ -449,12 +443,12 @@ def branch_median_weights(M):
     return weights
 
 
-def branch_s2s_epsilons():
+def s2s_epsilons():
     eps = np.array([-1.645, 0.0, 1.645])
     return eps
 
 
-def branch_s2s_weights():
+def s2s_weights():
     # weights = np.array([0.185, 0.63, 0.185])
     # note that the above reproduces the second order moment of
     # the lognormal distribution

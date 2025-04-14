@@ -302,7 +302,6 @@ def reference_ac_variance_ds(R, M, pars, par_id=None):
     """
 
     ref_variance = reference_gm_variance_ds(pars, par_id=par_id)
-
     total_variance = ref_variance + c2c_variance_ds(R, M)
 
     return total_variance
@@ -350,12 +349,7 @@ def surface_ac_realization(
     par_id  - array with parameter names (ids), if None then assume
               pars is structured array
     """
-    # lnY_median = reference_median(R, M, T, ref_pars, ref_par_id)
-    # varY = reference_ac_variance(R, M, T, tau, phi_ss)
-    # lnY = lnY_median + eps_ref * np.sqrt(varY)
-    # lnAF_median = af_median(R, M, lnY, af_pars, af_par_id)
-    # varAF = af_variance(lnY, af_pars, af_par_id)
-    # lnAF = lnAF_median + eps_af * np.sqrt(varAF)
+
     lnY = reference_ac_realization(R, M, T, tau, phi_ss, eps_ref, ref_pars, ref_par_id)
     lnAF = af_realization(R, M, lnY, eps_af, af_pars, af_par_id)
 
@@ -384,12 +378,6 @@ def surface_gm_realization(
     par_id  - array with parameter names (ids), if None then assume
               pars is structured array
     """
-    # lnY_median = reference_median(R, M, T, ref_pars, ref_par_id)
-    # varY = reference_ac_variance(R, M, T, tau, phi_ss)
-    # lnY = lnY_median + eps_ref * np.sqrt(varY)
-    # lnAF_median = af_median(R, M, lnY, af_pars, af_par_id)
-    # varAF = af_variance(lnY, af_pars, af_par_id)
-    # lnAF = lnAF_median + eps_af * np.sqrt(varAF)
     lnY = reference_gm_realization(R, M, T, tau, phi_ss, eps_ref, ref_pars, ref_par_id)
     lnAF = af_realization(R, M, lnY, eps_af, af_pars, af_par_id)
 
@@ -427,16 +415,6 @@ def af_median(R, M, lnSA, pars, par_id=None):
     lnAFclipped = np.clip(lnAF, np.log(Afmin), np.log(Afmax))
 
     return lnAFclipped
-
-
-def af_max(pars, par_id=None):
-    # organize parameter views into dictionary
-    c = gen_dict_like(pars, par_id)
-
-    # local symbols just for code readability
-    Afmax = c["Afmax"]
-
-    return np.log(Afmax)
 
 
 def af_median_linear(R, M, pars, par_id=None):
@@ -485,14 +463,14 @@ def af_median_nonlinear(lnY, pars, par_id=None):
 
     # local symbols just for code readability
     f2, f3 = c["f2"], c["f3"]
-    Afscale = c["AFscale"]
+    AFscale = c["AFscale"]
 
     # for spectral accelerations from cm/s2 to g just
     # to determine the AF - does not affect the unit of SA outside of this scope
-    Y = np.exp(lnY) / Afscale
+    Y_g = np.exp(lnY) / AFscale
 
     # (9.12)
-    lnAFnonlin = f2 * np.log((Y + f3) / f3)
+    lnAFnonlin = f2 * np.log((Y_g + f3) / f3)
 
     return lnAFnonlin
 
@@ -549,7 +527,7 @@ def af_variance(lnY, pars, par_id=None):
     equations 5.11 in [Bommer et al 2019]
 
     inputs
-    lnSY   - ln of spectral acceleration (in units of g) or PGV (cm/s)
+    lnY    - ln of spectral acceleration (in units of cm/s2) or PGV (cm/s)
     pars   - site amplification coeffs for specific zone and spectral
              acceleration, coming from afcoeffs[zone][sakey]
              see also doc of this module and of PoE_calc.py
@@ -559,10 +537,17 @@ def af_variance(lnY, pars, par_id=None):
 
     # local symbols just for code readability
     s1, s2, xl, xh = c["phiS2S_1"], c["phi_S2S_2"], c["Sa_low"], c["Sa_high"]
+    AFscale = c["AFscale"]
+
+    # for spectral accelerations from cm/s2 to g just
+    # to determine the AF - does not affect the unit of SA outside of this scope
+    lnY_g = lnY - np.log(AFscale)
 
     # (9.15)
     smin, smax = np.minimum(s1, s2), np.maximum(s1, s2)
-    phi_s2s = np.clip(s1 + (s2 - s1) * (lnY - np.log(xl)) / np.log(xh / xl), smin, smax)
+    phi_s2s = np.clip(
+        s1 + (s2 - s1) * (lnY_g - np.log(xl)) / np.log(xh / xl), smin, smax
+    )
 
     # from standard deviation to variance
     var_s2s = phi_s2s**2
